@@ -1,0 +1,33 @@
+{
+  "eastus": [
+    {
+      "name": {
+        "value": "standardDSv5Family",
+        "localizedValue": "Standard DSv5 Family vCPUs"
+      },
+      "currentValue": "10",
+      "limit": "100",
+      "unit": "Count"
+    },
+    {
+      "name": {
+        "value": "totalRegionalVCPUs",
+        "localizedValue": "Total Regional vCPUs"
+      },
+      "currentValue": "20",
+      "limit": "200",
+      "unit": "Count"
+    }
+  ],
+  "swedencentral": [
+    {
+      "name": {
+        "value": "standardDSv5Family",
+        "localizedValue": "Standard DSv5 Family vCPUs"
+      },
+      "currentValue": 10,
+      "limit": 10,
+      "unit": "Count"
+    }
+  ]
+}
