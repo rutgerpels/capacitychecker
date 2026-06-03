@@ -5,6 +5,10 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import quote
+
+
+RESOURCE_SKUS_API_VERSION = "2021-07-01"
 
 
 class CapacityProvider(Protocol):
@@ -27,12 +31,14 @@ class AzureCliProvider:
     def __init__(
         self,
         subscription: str | None = None,
-        enable_live_sku_metadata: bool = False,
+        enable_live_sku_metadata: bool = True,
         az_executable: str | None = None,
     ) -> None:
         self.subscription = subscription
         self.enable_live_sku_metadata = enable_live_sku_metadata
         self.az_executable = az_executable
+        self._subscription_id: str | None = None
+        self._sku_cache: dict[str, list[dict[str, Any]]] = {}
 
     @property
     def source_name(self) -> str:
@@ -41,23 +47,68 @@ class AzureCliProvider:
     def list_skus(self, region: str, sku: str) -> list[dict[str, Any]] | None:
         if not self.enable_live_sku_metadata:
             return None
+        rows = self._resource_skus(region)
+        return [row for row in rows if _casefold(row.get("name")) == _casefold(sku)]
+
+    def _resource_skus(self, region: str) -> list[dict[str, Any]]:
+        cache_key = region.casefold()
+        cached_rows = self._sku_cache.get(cache_key)
+        if cached_rows is not None:
+             return cached_rows
+
+        subscription_id = quote(self._resolve_subscription_id(), safe="")
+        url = (
+            f"https://management.azure.com/subscriptions/{subscription_id}"
+            "/providers/Microsoft.Compute/skus"
+        )
         command = [
             self._az_command(),
-            "vm",
-            "list-skus",
-            "--location",
-            region,
-            "--size",
-            sku,
-            "--all",
+            "rest",
+            "--method",
+            "get",
+            "--url",
+            url,
+            "--url-parameters",
+            f"api-version={RESOURCE_SKUS_API_VERSION}",
+            f"$filter=location eq '{region}'",
             "--output",
             "json",
         ]
-        return self._run_json(command)
+        response = self._run_json(command)
+        if not isinstance(response, dict):
+            raise ProviderError("Azure Resource SKUs API returned unexpected JSON; expected an object.")
+
+        rows = response.get("value", [])
+        if not isinstance(rows, list):
+            raise ProviderError("Azure Resource SKUs API returned unexpected JSON; expected a value list.")
+
+        self._sku_cache[cache_key] = [row for row in rows if isinstance(row, dict)]
+        return self._sku_cache[cache_key]
 
     def list_usage(self, region: str) -> list[dict[str, Any]]:
-        command = [self._az_command(), "vm", "list-usage", "--location", region, "--output", "json"]
-        return self._run_json(command)
+        command = [
+            self._az_command(),
+            "vm",
+            "list-usage",
+            "--location",
+            region,
+            "--output",
+            "json",
+        ]
+        response = self._run_json(command)
+        if not isinstance(response, list):
+            raise ProviderError("Azure CLI returned unexpected JSON; expected a list.")
+        return response
+
+    def _resolve_subscription_id(self) -> str:
+        if self._subscription_id:
+            return self._subscription_id
+
+        command = [self._az_command(), "account", "show", "--query", "id", "--output", "tsv"]
+        self._subscription_id = self._run_text(command).strip()
+        if not self._subscription_id:
+            raise ProviderError("Azure CLI did not return a subscription id.")
+        return self._subscription_id
 
     def _az_command(self) -> str:
         executable = self.az_executable or shutil.which("az")
@@ -67,14 +118,16 @@ class AzureCliProvider:
             "Azure CLI executable 'az' was not found. Install Azure CLI or use mock fixture files."
         )
 
-    def _run_json(self, command: list[str]) -> list[dict[str, Any]]:
+    def _run_text(self, command: list[str]) -> str:
         if self.subscription:
             command.extend(["--subscription", self.subscription])
 
         try:
             completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=60)
         except FileNotFoundError as exc:
-            raise ProviderError("Azure CLI executable 'az' was not found. Install Azure CLI or use mock fixture files.") from exc
+            raise ProviderError(
+                "Azure CLI executable 'az' was not found. Install Azure CLI or use mock fixture files."
+            ) from exc
         except subprocess.TimeoutExpired as exc:
             raise ProviderError(f"Azure CLI command timed out: {' '.join(command)}") from exc
 
@@ -82,14 +135,14 @@ class AzureCliProvider:
             message = completed.stderr.strip() or completed.stdout.strip() or "unknown Azure CLI error"
             raise ProviderError(f"Azure CLI command failed: {message}")
 
+        return completed.stdout
+
+    def _run_json(self, command: list[str]) -> Any:
+        stdout = self._run_text(command)
         try:
-            data = json.loads(completed.stdout or "[]")
+            return json.loads(stdout or "[]")
         except json.JSONDecodeError as exc:
             raise ProviderError("Azure CLI returned invalid JSON.") from exc
-
-        if not isinstance(data, list):
-            raise ProviderError("Azure CLI returned unexpected JSON; expected a list.")
-        return data
 
 
 class FixtureProvider:

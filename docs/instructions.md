@@ -97,15 +97,15 @@ python -m capacitychecker check --skus Standard_D2s_v5,Standard_E4s_v5 --regions
   --mock-skus-file tests\fixtures\skus.json --mock-usage-file tests\fixtures\usage.json
 ```
 
-### Live Azure Mode Caveat
+### Live Azure Mode
 
-The MVP intentionally avoids live `az vm list-skus` calls by default because that Azure CLI command can be slow or hang in some environments. Live mode uses `az vm list-usage` for quota/headroom and marks SKU offered/restricted metadata as unknown unless you explicitly opt in:
+By default, live mode uses Azure CLI for both quota/headroom and Resource SKUs metadata. The tool calls the Azure Resource SKUs ARM endpoint through `az rest` for offered/restricted signals because `az vm list-skus` can be slow or hang in some environments.
 
 ```bash
-python -m capacitychecker check --sku Standard_D2s_v5 --region eastus --enable-live-sku-metadata
+python -m capacitychecker check --sku Standard_D2s_v5 --region eastus
 ```
 
-Use fixture mode when you need deterministic offered/restricted behavior for demos or tests. Future versions should replace this with a cached SKU metadata source or a more robust Azure REST integration.
+Use `--skip-live-sku-metadata` for quota-only checks, or fixture mode when you need deterministic offered/restricted behavior for demos or tests.
 
 ### Example Scenarios
 
@@ -406,10 +406,10 @@ capacitychecker check --skus Standard_D2s_v5 --regions eastus,swedencentral \
    - The tool provides metadata-based allocatability signals (quota and capacity restrictions) but does not perform live test deployments
    - Stretch-goal feature: optional real deployment probes for higher confidence
 
-2. **Live SKU Metadata Disabled by Default**
-   - Live Azure mode uses quota/headroom signals by default.
-   - SKU offered and restriction metadata are unknown unless `--enable-live-sku-metadata` is used or fixture data is supplied.
-   - This avoids known reliability issues with live `az vm list-skus` calls in some environments.
+2. **Live SKU Metadata Uses ARM Resource SKUs**
+   - Live Azure mode uses quota/headroom signals and Resource SKUs metadata by default.
+   - `az vm list-skus` is not used because it can hang in some environments.
+   - Use `--skip-live-sku-metadata` if you need a quota-only check.
 
 3. **Quota-Based Only**  
    - Quota headroom is subscription-specific and should not be treated as global Azure capacity

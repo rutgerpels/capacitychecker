@@ -7,7 +7,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
-from capacitychecker.cli import main
+from capacitychecker.cli import _build_parser, main
 from capacitychecker.matrix import build_matrix
 
 
@@ -116,6 +116,17 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertIn("region", stderr)
+
+    def test_live_sku_metadata_is_enabled_by_default_with_opt_out(self) -> None:
+        parser = _build_parser()
+
+        default_args = parser.parse_args(["check", "--sku", "Standard_D2s_v5", "--region", "eastus"])
+        opt_out_args = parser.parse_args(
+            ["check", "--sku", "Standard_D2s_v5", "--region", "eastus", "--skip-live-sku-metadata"]
+        )
+
+        self.assertTrue(default_args.enable_live_sku_metadata)
+        self.assertFalse(opt_out_args.enable_live_sku_metadata)
 
 
 class QuotaOnlyProvider:

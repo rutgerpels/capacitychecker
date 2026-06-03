@@ -52,9 +52,17 @@ def _build_parser() -> argparse.ArgumentParser:
     check.add_argument("--mock-usage-file", type=Path, help="Path to fixture JSON that mimics 'az vm list-usage' output.")
     check.add_argument(
         "--enable-live-sku-metadata",
+        dest="enable_live_sku_metadata",
         action="store_true",
-        help="Opt in to 'az vm list-skus' calls for offered/restricted signals. Disabled by default because the command can hang or time out.",
+        help="Fetch offered/restricted signals from Azure Resource SKUs metadata. Enabled by default.",
     )
+    check.add_argument(
+        "--skip-live-sku-metadata",
+        dest="enable_live_sku_metadata",
+        action="store_false",
+        help="Skip Azure Resource SKUs metadata and use quota/headroom signals only.",
+    )
+    check.set_defaults(enable_live_sku_metadata=True)
     return parser
 
 

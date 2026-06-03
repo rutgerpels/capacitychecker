@@ -8,6 +8,55 @@ from capacitychecker.providers import AzureCliProvider, ProviderError
 
 
 class AzureCliProviderTests(unittest.TestCase):
+    def test_fetches_resource_skus_through_az_rest(self) -> None:
+        account = subprocess.CompletedProcess(args=[], returncode=0, stdout="sub-123\n", stderr="")
+        skus = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='{"value":[{"name":"Standard_D2s_v5"},{"name":"Standard_E4s_v5"}]}',
+            stderr="",
+        )
+
+        with patch("capacitychecker.providers.subprocess.run", side_effect=[account, skus]) as run:
+            rows = AzureCliProvider(az_executable="az").list_skus("eastus", "Standard_D2s_v5")
+
+        self.assertEqual(rows, [{"name": "Standard_D2s_v5"}])
+        account_command = run.call_args_list[0].args[0]
+        rest_command = run.call_args_list[1].args[0]
+        self.assertEqual(account_command[:3], ["az", "account", "show"])
+        self.assertIn("rest", rest_command)
+        self.assertIn("--url", rest_command)
+        self.assertIn("Microsoft.Compute/skus", rest_command[rest_command.index("--url") + 1])
+        self.assertIn("--url-parameters", rest_command)
+        self.assertIn("api-version=2021-07-01", rest_command)
+        self.assertIn("$filter=location eq 'eastus'", rest_command)
+
+    def test_caches_resource_skus_by_region(self) -> None:
+        account = subprocess.CompletedProcess(args=[], returncode=0, stdout="sub-123\n", stderr="")
+        skus = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='{"value":[{"name":"Standard_D2s_v5"},{"name":"Standard_E4s_v5"}]}',
+            stderr="",
+        )
+
+        with patch("capacitychecker.providers.subprocess.run", side_effect=[account, skus]) as run:
+            provider = AzureCliProvider(az_executable="az")
+            self.assertEqual(provider.list_skus("eastus", "Standard_D2s_v5"), [{"name": "Standard_D2s_v5"}])
+            self.assertEqual(provider.list_skus("eastus", "Standard_E4s_v5"), [{"name": "Standard_E4s_v5"}])
+
+        self.assertEqual(run.call_count, 2)
+
+    def test_can_skip_live_sku_metadata(self) -> None:
+        with patch("capacitychecker.providers.subprocess.run") as run:
+            rows = AzureCliProvider(enable_live_sku_metadata=False, az_executable="az").list_skus(
+                "eastus",
+                "Standard_D2s_v5",
+            )
+
+        self.assertIsNone(rows)
+        run.assert_not_called()
+
     def test_resolves_azure_cli_with_windows_command_extension(self) -> None:
         az_cmd = r"C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin\az.cmd"
         completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="[]", stderr="")
