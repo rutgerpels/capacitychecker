@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Protocol
@@ -23,9 +24,15 @@ class ProviderError(RuntimeError):
 
 
 class AzureCliProvider:
-    def __init__(self, subscription: str | None = None, enable_live_sku_metadata: bool = False) -> None:
+    def __init__(
+        self,
+        subscription: str | None = None,
+        enable_live_sku_metadata: bool = False,
+        az_executable: str | None = None,
+    ) -> None:
         self.subscription = subscription
         self.enable_live_sku_metadata = enable_live_sku_metadata
+        self.az_executable = az_executable
 
     @property
     def source_name(self) -> str:
@@ -34,12 +41,31 @@ class AzureCliProvider:
     def list_skus(self, region: str, sku: str) -> list[dict[str, Any]] | None:
         if not self.enable_live_sku_metadata:
             return None
-        command = ["az", "vm", "list-skus", "--location", region, "--size", sku, "--all", "--output", "json"]
+        command = [
+            self._az_command(),
+            "vm",
+            "list-skus",
+            "--location",
+            region,
+            "--size",
+            sku,
+            "--all",
+            "--output",
+            "json",
+        ]
         return self._run_json(command)
 
     def list_usage(self, region: str) -> list[dict[str, Any]]:
-        command = ["az", "vm", "list-usage", "--location", region, "--output", "json"]
+        command = [self._az_command(), "vm", "list-usage", "--location", region, "--output", "json"]
         return self._run_json(command)
+
+    def _az_command(self) -> str:
+        executable = self.az_executable or shutil.which("az")
+        if executable:
+            return executable
+        raise ProviderError(
+            "Azure CLI executable 'az' was not found. Install Azure CLI or use mock fixture files."
+        )
 
     def _run_json(self, command: list[str]) -> list[dict[str, Any]]:
         if self.subscription:
