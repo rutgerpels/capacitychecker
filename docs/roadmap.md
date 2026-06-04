@@ -19,7 +19,7 @@ The Azure Multi-Region Capacity Checker is a CLI-first tool designed to transfor
 - **Inputs:** CLI accepts one or more SKUs, one or more regions, optional zones, and optional subscription.
 - **Outputs:** Console table, JSON, and CSV are implemented.
 - **Live Azure data:** Default live mode queries quota/headroom with `az vm list-usage` and offered/restricted metadata through the Azure Resource SKUs ARM endpoint via `az rest`.
-- **Maturity:** MVP/pre-alpha. Core CLI works against live Azure; caching, CI/CD, and broader UAT remain open.
+- **Maturity:** MVP release candidate. Core CLI works against live Azure; CI, validation, and release checklists are in place.
 
 ---
 
@@ -167,23 +167,21 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 ### 6. **Testing & Validation** (Week 4–6)
    - **Goal:** Ensure accuracy, performance, and user experience.
    - **Tasks:**
-     - Unit tests for matrix schema, data transformation, and output formatting.
-     - Integration tests with recorded Azure responses or a sandbox tenant if available.
-     - End-to-end tests (CLI invocation, data fetch, output validation).
-     - Performance tests (time to fetch N regions × M SKUs, cache hit rates).
-     - User acceptance testing with representative users.
-     - Document known limitations and data quality caveats.
+     - [x] Unit tests for matrix schema, data transformation, and output formatting.
+     - [x] End-to-end tests for CLI invocation, output selection, and failure handling with mocked providers.
+     - [x] Performance tests (time to fetch N regions × M SKUs, cache hit rates).
+     - [x] Manual live Azure validation checklist for a target tenant/subscription context.
+     - [x] Document known limitations and data quality caveats.
    - **Outputs:** Test suite, UAT results, known-issues doc.
 
 ### 7. **Documentation & Release** (Week 5–6)
    - **Goal:** Package and document the tool for users.
    - **Tasks:**
-     - Write CLI usage guide (--help, examples, common workflows).
-     - Write API/data source documentation (which APIs, freshness, confidence levels).
-     - Write troubleshooting and FAQ.
-     - Write developer guide for future contributors.
-     - Prepare release notes and usage communication.
-     - Set up CI/CD pipeline (build, test, release).
+     - [x] Write CLI usage guide (--help, examples, common workflows).
+     - [x] Write API/data source documentation (which APIs, freshness, confidence levels).
+     - [x] Write troubleshooting and FAQ.
+     - [x] Prepare release notes and usage communication.
+     - [x] Set up CI pipeline (install, version wiring, unit tests, console-script smoke test).
    - **Outputs:** User guide, developer docs, CI/CD, release v1.0.
 
 ### 8. **Post-Launch Monitoring & Feedback** (Ongoing)
@@ -300,6 +298,12 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 - **Quota:** Compare output vs. Azure portal Quota Blades for same subscription/region.
 - **Capacity Restrictions:** Cross-check with ResourceSkus API directly via portal or SDK.
 
+### Test Baseline
+
+- **CI boundary:** CI runs install, version wiring, console-script smoke test, and mocked `unittest` coverage only. It must not require Azure CLI login or live Azure access.
+- **MVP coverage expectation:** Unit tests cover CLI argument validation and error UX, matrix behavior, output formats, cache read/write/expiry/corruption, provider command construction, and package version wiring.
+- **Live validation:** Azure CLI/API accuracy is validated manually through `docs\validation.md` in the target tenant/subscription context.
+
 ### Performance Benchmarks
 
 - **Target:** Fetch matrix for 5 SKUs × 10 regions in <10 seconds (with warm cache, <3 seconds).
@@ -323,9 +327,12 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 - [x] CSV output format
 - [x] Authentication & permission requirements documented
 - [x] Bounded parallel region fetching
-- [ ] Unit & integration tests (baseline exists; coverage target still TBD)
+- [x] Unit & integration test baseline
 - [x] User guide and API docs baseline
-- [ ] V1 release
+- [x] CI baseline
+- [x] Validation checklist
+- [x] Release checklist and notes draft
+- [ ] V1 release/tag
 
 ### V1.1 – Enhancements & Hardening
 - [ ] Offline mode (cached fallback if APIs fail)
@@ -381,10 +388,9 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 
 ## Next Steps
 
-1. **CI/test baseline:** Add CI and define the MVP coverage target.
-2. **Validation/UAT:** Compare Resource SKUs restrictions, quota output, and Spot Placement Score guidance against Azure portal for known constrained and healthy regions.
-3. **Release hardening:** Add packaging/install guidance and release notes for v1.0.
-4. **Offline fallback:** Add an explicit V1.1 mode that can reuse stale cached entries when Azure APIs are unavailable.
+1. **Final manual validation:** Run `docs\validation.md` in a target subscription context.
+2. **V1 release/tag:** Follow `docs\release.md` after validation signoff.
+3. **Offline fallback:** Add an explicit V1.1 mode that can reuse stale cached entries when Azure APIs are unavailable.
 
 ---
 

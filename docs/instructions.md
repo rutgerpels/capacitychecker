@@ -24,6 +24,10 @@ The Azure Multi-Region Capacity Checker is a command-line tool for checking Azur
 1. **Azure CLI** installed and authenticated  
    - Ensure `az` is in your PATH and you can run `az account show`
    - The tool will use your current Azure CLI context and subscription
+   - Verify your Azure CLI includes Spot Placement Score support before using `--include-spot-score`:
+     ```bash
+     az compute-recommender spot-placement-score --help
+     ```
 
 2. **Supported Subscription Access**  
    - You must have read access (Reader role or higher) to view quota and capacity metadata in your target subscription
@@ -70,6 +74,11 @@ The tool uses **Azure CLI authentication** by default. No separate credentials a
    az account show
    ```
    The tool will operate in this subscription's scope.
+
+4. Optional: verify Spot Placement Score command availability if you plan to use `--include-spot-score`:
+   ```bash
+   az compute-recommender spot-placement-score --help
+   ```
 
 ### Permissions Required
 - **Microsoft.Compute/skus/read** — to query available SKUs and region offerings
@@ -156,6 +165,12 @@ Use `--include-spot-score` when you want Microsoft Spot Placement Score guidance
 
 ```bash
 python -m capacitychecker check --sku Standard_D2s_v5 --region eastus --include-spot-score --spot-desired-count 1
+```
+
+Verify your Azure CLI has the Spot Placement Score command before using this feature:
+
+```bash
+az compute-recommender spot-placement-score --help
 ```
 
 Spot Placement Score is separate from regular VM allocatability. Regular VM allocatability uses offered/restricted metadata and subscription quota. Spot Placement Score answers a narrower question: given the requested Spot VM size, count, region, and optional zone scope, how favorable is the current Spot placement guidance?
@@ -525,6 +540,8 @@ A: Yes. See the "Scheduled Capacity Monitoring" section under Advanced Usage.
 For issues, questions, or feedback:
 
 - **Documentation:** Refer to this guide and the project README
+- **Validation checklist:** Use `docs\validation.md` for repeatable live Azure validation
+- **Release checklist:** Use `docs\release.md` for v1 release preparation
 - **Issue Tracking:** Report bugs or request features via the project repository (when available)
 - **Capacity support path:** For capacity-related questions or large-scale deployment planning, use the appropriate Azure support or capacity request process for your environment
 

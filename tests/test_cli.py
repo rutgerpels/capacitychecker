@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import threading
-import time
+import tomllib
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
@@ -11,9 +11,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from capacitychecker import __version__
 from capacitychecker.cache import CacheStore
 from capacitychecker.cli import _build_parser, main
 from capacitychecker.matrix import build_matrix
+from capacitychecker.providers import ProviderError
 from capacitychecker.renderers import render_csv, render_json, render_table
 
 
@@ -30,6 +32,19 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertIn("region", stderr)
+
+    def test_prints_version(self) -> None:
+        code, stdout, stderr = self.run_cli("--version")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(stdout.strip(), __version__)
+
+    def test_no_command_prints_help(self) -> None:
+        code, stdout, stderr = self.run_cli()
+
+        self.assertEqual(code, 2)
+        self.assertIn("usage: capacitychecker", stdout)
+        self.assertEqual(stderr, "")
 
     def test_live_sku_metadata_is_enabled_by_default_with_opt_out(self) -> None:
         parser = _build_parser()
@@ -89,6 +104,54 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(code, 0, stderr)
         self.assertIn("Cleared 1 cache entry", stdout)
+
+
+    def test_provider_errors_are_reported_cleanly(self) -> None:
+        class FailingProvider:
+            source_name = "failing-test"
+
+            def list_skus(self, region: str, sku: str):
+                return []
+
+            def list_usage(self, region: str):
+                raise ProviderError("boom")
+
+            def list_spot_placement_scores(self, regions, skus, zones, desired_count):
+                return None
+
+        with patch("capacitychecker.cli._build_provider", return_value=FailingProvider()):
+            code, stdout, stderr = self.run_cli("check", "--sku", "Standard_D2s_v5", "--region", "eastus")
+
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn("capacitychecker: error: boom", stderr)
+
+    def test_main_renders_json_output(self) -> None:
+        with patch("capacitychecker.cli._build_provider", return_value=StaticCapacityProvider()):
+            code, stdout, stderr = self.run_cli(
+                "check",
+                "--sku",
+                "Standard_D2s_v5",
+                "--region",
+                "eastus",
+                "--output",
+                "json",
+            )
+
+        self.assertEqual(code, 0, stderr)
+        payload = json.loads(stdout)
+        self.assertEqual(payload["results"][0]["sku"], "Standard_D2s_v5")
+        self.assertEqual(payload["results"][0]["allocatable"], "likely_yes")
+
+
+class PackagingTests(unittest.TestCase):
+    def test_pyproject_uses_package_version_attribute(self) -> None:
+        project_root = Path(__file__).resolve().parents[1]
+        pyproject = tomllib.loads((project_root / "pyproject.toml").read_text(encoding="utf-8"))
+
+        self.assertEqual(pyproject["project"]["dynamic"], ["version"])
+        self.assertEqual(pyproject["tool"]["setuptools"]["dynamic"]["version"]["attr"], "capacitychecker.__version__")
+
 
 class QuotaOnlyProvider:
     source_name = "quota-only-test"
@@ -213,6 +276,7 @@ class TrackingProvider:
         self.active_usage_calls = 0
         self.max_active_usage_calls = 0
         self.lock = threading.Lock()
+        self.two_active_calls = threading.Event()
 
     def list_skus(self, region: str, sku: str):
         return [{"name": sku, "locations": [region], "locationInfo": [{"location": region, "zones": []}], "restrictions": []}]
@@ -221,8 +285,10 @@ class TrackingProvider:
         with self.lock:
             self.active_usage_calls += 1
             self.max_active_usage_calls = max(self.max_active_usage_calls, self.active_usage_calls)
+            if self.active_usage_calls >= 2:
+                self.two_active_calls.set()
         try:
-            time.sleep(0.02)
+            self.two_active_calls.wait(timeout=1)
             return [{"name": {"value": "standardDSv5Family"}, "currentValue": "1", "limit": "10"}]
         finally:
             with self.lock:
