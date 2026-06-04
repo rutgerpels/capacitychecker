@@ -29,6 +29,9 @@ class CapacityRow:
     quota_headroom: QuotaHeadroom | None
     allocatable: str
     confidence: str
+    spot_placement_score: str | None = None
+    spot_placement_guidance: str = "unknown"
+    spot_quota_available: bool | None = None
     sources: list[str] = field(default_factory=list)
     freshness_seconds: int = 0
     checked_at: str = field(default_factory=utc_now_iso)

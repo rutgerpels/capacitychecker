@@ -8,6 +8,51 @@ from capacitychecker.providers import AzureCliProvider, ProviderError
 
 
 class AzureCliProviderTests(unittest.TestCase):
+    def test_fetches_spot_placement_scores(self) -> None:
+        response = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='{"placementScores":[{"sku":"Standard_D2s_v5","region":"eastus","score":"High","isQuotaAvailable":true}]}',
+            stderr="",
+        )
+
+        with patch("capacitychecker.providers.subprocess.run", return_value=response) as run:
+            scores = AzureCliProvider(az_executable="az").list_spot_placement_scores(
+                ["eastus"],
+                ["Standard_D2s_v5"],
+                [None],
+                1,
+            )
+
+        self.assertEqual(scores, [{"sku": "Standard_D2s_v5", "region": "eastus", "score": "High", "isQuotaAvailable": True}])
+        command = run.call_args.args[0]
+        self.assertIn("spot-placement-score", command)
+        self.assertIn("--desired-count", command)
+        self.assertIn("1", command)
+        self.assertIn("--desired-locations", command)
+        self.assertIn('["eastus"]', command)
+        self.assertIn("--desired-sizes", command)
+        self.assertIn('[{"sku": "Standard_D2s_v5"}]', command)
+        self.assertIn("--availability-zones", command)
+        self.assertIn("false", command)
+
+    def test_fetches_zonal_spot_placement_scores(self) -> None:
+        response = subprocess.CompletedProcess(args=[], returncode=0, stdout='{"placementScores":[]}', stderr="")
+
+        with patch("capacitychecker.providers.subprocess.run", return_value=response) as run:
+            AzureCliProvider(az_executable="az").list_spot_placement_scores(
+                ["eastus"],
+                ["Standard_D2s_v5"],
+                ["1", "2"],
+                3,
+            )
+
+        command = run.call_args.args[0]
+        self.assertIn("--availability-zones", command)
+        self.assertIn("true", command)
+        self.assertIn("--desired-count", command)
+        self.assertIn("3", command)
+
     def test_fetches_resource_skus_through_az_rest(self) -> None:
         account = subprocess.CompletedProcess(args=[], returncode=0, stdout="sub-123\n", stderr="")
         skus = subprocess.CompletedProcess(

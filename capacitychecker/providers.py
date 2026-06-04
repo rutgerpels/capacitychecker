@@ -18,6 +18,15 @@ class CapacityProvider(Protocol):
     def list_usage(self, region: str) -> list[dict[str, Any]]:
         ...
 
+    def list_spot_placement_scores(
+        self,
+        regions: list[str],
+        skus: list[str],
+        zones: list[str | None],
+        desired_count: int,
+    ) -> list[dict[str, Any]] | None:
+        ...
+
     @property
     def source_name(self) -> str:
         ...
@@ -54,7 +63,7 @@ class AzureCliProvider:
         cache_key = region.casefold()
         cached_rows = self._sku_cache.get(cache_key)
         if cached_rows is not None:
-             return cached_rows
+            return cached_rows
 
         subscription_id = quote(self._resolve_subscription_id(), safe="")
         url = (
@@ -99,6 +108,41 @@ class AzureCliProvider:
         if not isinstance(response, list):
             raise ProviderError("Azure CLI returned unexpected JSON; expected a list.")
         return response
+
+    def list_spot_placement_scores(
+        self,
+        regions: list[str],
+        skus: list[str],
+        zones: list[str | None],
+        desired_count: int,
+    ) -> list[dict[str, Any]] | None:
+        availability_zones = any(zone is not None for zone in zones)
+        command = [
+            self._az_command(),
+            "compute-recommender",
+            "spot-placement-score",
+            "--location",
+            regions[0],
+            "--availability-zones",
+            str(availability_zones).lower(),
+            "--desired-locations",
+            json.dumps(regions),
+            "--desired-count",
+            str(desired_count),
+            "--desired-sizes",
+            json.dumps([{"sku": sku} for sku in skus]),
+            "--output",
+            "json",
+            "--only-show-errors",
+        ]
+        response = self._run_json(command)
+        if not isinstance(response, dict):
+            raise ProviderError("Azure Spot Placement Score returned unexpected JSON; expected an object.")
+
+        scores = response.get("placementScores", [])
+        if not isinstance(scores, list):
+            raise ProviderError("Azure Spot Placement Score returned unexpected JSON; expected a placementScores list.")
+        return [score for score in scores if isinstance(score, dict)]
 
     def _resolve_subscription_id(self) -> str:
         if self._subscription_id:
@@ -160,6 +204,15 @@ class FixtureProvider:
 
     def list_usage(self, region: str) -> list[dict[str, Any]]:
         return _select_region_rows(self.usage_data, region)
+
+    def list_spot_placement_scores(
+        self,
+        regions: list[str],
+        skus: list[str],
+        zones: list[str | None],
+        desired_count: int,
+    ) -> list[dict[str, Any]] | None:
+        return None
 
 
 def _read_json(path: Path | None) -> Any:

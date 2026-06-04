@@ -124,9 +124,23 @@ class CliTests(unittest.TestCase):
         opt_out_args = parser.parse_args(
             ["check", "--sku", "Standard_D2s_v5", "--region", "eastus", "--skip-live-sku-metadata"]
         )
+        spot_args = parser.parse_args(
+            [
+                "check",
+                "--sku",
+                "Standard_D2s_v5",
+                "--region",
+                "eastus",
+                "--include-spot-score",
+                "--spot-desired-count",
+                "2",
+            ]
+        )
 
         self.assertTrue(default_args.enable_live_sku_metadata)
         self.assertFalse(opt_out_args.enable_live_sku_metadata)
+        self.assertTrue(spot_args.include_spot_score)
+        self.assertEqual(spot_args.spot_desired_count, 2)
 
 
 class QuotaOnlyProvider:
@@ -144,6 +158,43 @@ class QuotaOnlyProvider:
             }
         ]
 
+    def list_spot_placement_scores(self, regions, skus, zones, desired_count):
+        return None
+
+
+class SpotScoreProvider:
+    source_name = "spot-score-test"
+
+    def list_skus(self, region: str, sku: str):
+        return [
+            {
+                "name": sku,
+                "locations": [region],
+                "locationInfo": [{"location": region, "zones": ["1"]}],
+                "restrictions": [],
+            }
+        ]
+
+    def list_usage(self, region: str):
+        return [
+            {
+                "name": {"value": "standardDSv5Family"},
+                "currentValue": "4",
+                "limit": "20",
+            }
+        ]
+
+    def list_spot_placement_scores(self, regions, skus, zones, desired_count):
+        return [
+            {
+                "sku": "Standard_D2s_v5",
+                "region": "eastus",
+                "availabilityZone": "1",
+                "score": "High",
+                "isQuotaAvailable": True,
+            }
+        ]
+
 
 class MatrixTests(unittest.TestCase):
     def test_live_quota_only_mode_marks_sku_metadata_unknown(self) -> None:
@@ -155,6 +206,23 @@ class MatrixTests(unittest.TestCase):
         self.assertEqual(rows[0].quota_headroom.value, 16)
         self.assertEqual(rows[0].allocatable, "unknown")
         self.assertEqual(rows[0].confidence, "low")
+
+    def test_spot_score_adds_guidance_without_overriding_regular_allocatable(self) -> None:
+        rows = build_matrix(
+            SpotScoreProvider(),
+            ["Standard_D2s_v5"],
+            ["eastus"],
+            ["1"],
+            include_spot_score=True,
+            spot_desired_count=1,
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].spot_placement_score, "High")
+        self.assertEqual(rows[0].spot_placement_guidance, "high")
+        self.assertTrue(rows[0].spot_quota_available)
+        self.assertEqual(rows[0].allocatable, "likely_yes")
+        self.assertIn("not a guarantee", " ".join(rows[0].notes))
 
 
 if __name__ == "__main__":

@@ -26,8 +26,16 @@ def main(argv: list[str] | None = None) -> int:
         skus = _collect_values(args.sku, args.skus, "sku")
         regions = _collect_values(args.region, args.regions, "region")
         zones = _collect_zones(args.zones)
+        spot_desired_count = _collect_positive_int(args.spot_desired_count, "spot-desired-count")
         provider = _build_provider(args)
-        rows = build_matrix(provider, skus, regions, zones)
+        rows = build_matrix(
+            provider,
+            skus,
+            regions,
+            zones,
+            include_spot_score=args.include_spot_score,
+            spot_desired_count=spot_desired_count,
+        )
         write_output(_render(args.output, rows, args.subscription))
         return 0
     except (ProviderError, ValueError) as exc:
@@ -48,6 +56,17 @@ def _build_parser() -> argparse.ArgumentParser:
     check.add_argument("--zones", help="Comma-separated availability zones to evaluate, such as 1,2,3.")
     check.add_argument("--subscription", help="Azure subscription id or name to pass to Azure CLI.")
     check.add_argument("--output", choices=["table", "json", "csv"], default="table", help="Output format.")
+    check.add_argument(
+        "--include-spot-score",
+        action="store_true",
+        help="Fetch Microsoft Spot Placement Score guidance for Spot placement likelihood.",
+    )
+    check.add_argument(
+        "--spot-desired-count",
+        type=int,
+        default=1,
+        help="Desired Spot VM instance count to use with --include-spot-score. Default: 1.",
+    )
     check.add_argument("--mock-skus-file", type=Path, help="Path to fixture JSON that mimics 'az vm list-skus' output.")
     check.add_argument("--mock-usage-file", type=Path, help="Path to fixture JSON that mimics 'az vm list-usage' output.")
     check.add_argument(
@@ -93,6 +112,12 @@ def _collect_zones(zones: str | None) -> list[str | None]:
     if not cleaned:
         raise ValueError("--zones was provided but no zone values were found.")
     return cleaned
+
+
+def _collect_positive_int(value: int, name: str) -> int:
+    if value < 1:
+        raise ValueError(f"--{name} must be greater than zero.")
+    return value
 
 
 def _render(output: str, rows: list, subscription: str | None) -> str:
