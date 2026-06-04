@@ -2,20 +2,20 @@
 
 **Last Updated:** 2026-06-04
 **Status:** MVP implemented; V1 hardening in progress
-**Audience:** Internal product team, field engineers, Azure capacity stakeholders
+**Audience:** Azure users, solution architects, capacity planners, and automation owners
 
 ---
 
 ## Executive Summary
 
-The Azure Multi-Region Capacity Checker is a CLI-first tool designed to transform capacity from **tribal knowledge** into a **live, queryable signal**. Field engineers can run it before customer conversations to get a current SKU-by-region availability matrix, informing what deployment guidance we can confidently give. V1 focuses on core functionality: canonical matrix schema, console/JSON/CSV output, and allocatability confidence derived from Azure metadata, quota, and restriction signals. Real deployment probes are explicitly post-V1 or opt-in stretch work.
+The Azure Multi-Region Capacity Checker is a CLI-first tool designed to transform capacity from guesswork into a **live, queryable signal** for the Azure tenant and subscription context used to run it. Users can run it before deployment planning to get a current SKU-by-region availability matrix. V1 focuses on core functionality: canonical matrix schema, console/JSON/CSV output, and allocatability confidence derived from Azure metadata, quota, and restriction signals. Real deployment probes are explicitly post-V1 or opt-in stretch work.
 
 ---
 
 ## Current State
 
 - **Repo:** `capacitychecker_v2` (fresh start)
-- **Team:** Azure Capacity / Field Engineering alignment
+- **Project focus:** Azure capacity guidance for deployment planning
 - **Inputs:** CLI accepts one or more SKUs, one or more regions, optional zones, and optional subscription.
 - **Outputs:** Console table, JSON, and CSV are implemented.
 - **Live Azure data:** Default live mode queries quota/headroom with `az vm list-usage` and offered/restricted metadata through the Azure Resource SKUs ARM endpoint via `az rest`.
@@ -25,7 +25,7 @@ The Azure Multi-Region Capacity Checker is a CLI-first tool designed to transfor
 
 ## Vision
 
-A **trustworthy, always-current capacity signal** accessible to field engineers in seconds, reducing the risk of outdated guidance causing production allocation failures. The tool evolves from a CLI-first capacity reader to an agentic platform that prepares customer conversations, alerts on regional capacity drift, and integrates with Azure's formal capacity-request workflow.
+A **trustworthy, current capacity signal** accessible from the command line in seconds, reducing the risk of outdated guidance causing production allocation failures. The tool evolves from a CLI-first capacity reader to an agentic platform that supports deployment planning, alerts on regional capacity drift, and integrates with Azure's formal capacity-request workflow.
 
 ---
 
@@ -57,13 +57,13 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 4. **Quota Headroom** (integer):  
    - Remaining quota for this SKU in this region on the target subscription.  
    - Source: Azure Quota API.  
-   - Caveat: Subscription-scoped, so must be validated per customer context.
+   - Caveat: Subscription-scoped, so results must be generated in the tenant and subscription that matter for the deployment.
 
 5. **Allocatable** (status + confidence):  
    - Can we reasonably recommend this SKU/region combination based on metadata, restrictions, and quota?  
    - Source: V1 metadata, quota, and restriction signals.  
    - Confidence: Metadata-derived, not deployment-probe-confirmed.  
-   - Note: Live deployment probes are **post-V1/stretch** because they introduce cost, permissions, cleanup, rate limits, and possible customer-environment side effects.
+   - Note: Live deployment probes are **post-V1/stretch** because they introduce cost, permissions, cleanup, rate limits, and possible environment side effects.
 
 6. **Freshness & Source** (metadata):  
    - When was this data refreshed?  
@@ -79,7 +79,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
   Structured matrix for dashboard ingestion, alerting, or downstream automation.
   
 - **CSV:**  
-  Spreadsheet-friendly export for customer sharing or reporting.
+  Spreadsheet-friendly export for stakeholder sharing or reporting.
 
 ### Metadata & Caching
 
@@ -95,10 +95,10 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 ### Phase 2: Historical & Agentic
 - **Trend store:** Time-series database of capacity signals so "swedencentral has been tightening for 3 weeks" is visible.
 - **Agentic analysis:** AI-powered summaries ("3 SKUs are constrained in EU regions; recommend rotation to <alternatives>").
-- **Customer prep material:** Auto-generated talking points and risk summaries for field engineer conversations.
+- **Deployment planning summaries:** Auto-generated talking points and risk summaries for deployment planning.
 
 ### Phase 3: Web & Integration
-- **Shareable web view:** HTML matrix/dashboard to share with customers or pin to internal wikis.
+- **Shareable web view:** HTML matrix/dashboard to share with stakeholders or publish to team wikis.
 - **Azure capacity-request workflow integration:** Deep link or API integration so "request more quota" flows directly to Azure's formal capacity-request process.
 - **Scheduled reports:** Background runs that email or Slack digest summaries on a cadence.
 
@@ -119,7 +119,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
      - [x] Identify Spot signal source: Microsoft Spot Placement Score for optional Spot placement guidance.
      - [x] Document post-V1 probe strategy without implementing it in the v1 critical path.
      - Decide on SDK choice (Azure SDK for Python/Go/Node, or raw REST calls).
-     - [x] Design schema for canonical matrix internal representation.
+     - [x] Design schema for the canonical matrix data model.
    - **Outputs:** Architecture decision doc, API integration guide, matrix schema (JSON).
 
 ### 2. **Core CLI & Data Fetching** (Week 2–4)
@@ -171,23 +171,23 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
      - Integration tests with recorded Azure responses or a sandbox tenant if available.
      - End-to-end tests (CLI invocation, data fetch, output validation).
      - Performance tests (time to fetch N regions × M SKUs, cache hit rates).
-     - User acceptance testing with 2–3 field engineers.
+     - User acceptance testing with representative users.
      - Document known limitations and data quality caveats.
    - **Outputs:** Test suite, UAT results, known-issues doc.
 
 ### 7. **Documentation & Release** (Week 5–6)
-   - **Goal:** Package and document the tool for internal use.
+   - **Goal:** Package and document the tool for users.
    - **Tasks:**
      - Write CLI usage guide (--help, examples, common workflows).
      - Write API/data source documentation (which APIs, freshness, confidence levels).
      - Write troubleshooting and FAQ.
      - Write developer guide for future contributors.
-     - Prepare release notes and internal communication.
+     - Prepare release notes and usage communication.
      - Set up CI/CD pipeline (build, test, release).
    - **Outputs:** User guide, developer docs, CI/CD, release v1.0.
 
 ### 8. **Post-Launch Monitoring & Feedback** (Ongoing)
-   - **Goal:** Gather field engineer feedback and identify improvements.
+   - **Goal:** Gather user feedback and identify improvements.
    - **Tasks:**
      - Instrument CLI to log usage (anonymously, conforming to privacy policy).
      - Gather feedback from early users.
@@ -204,8 +204,8 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 | **Architecture Review** | Week 1 end | APIs identified, schema finalized, SDK chosen | Architecture doc, schema spec |
 | **Core CLI + Fetching** | Week 4 end | CLI runs, fetches ResourceSkus, Quota, Spot, merges into matrix | Working CLI (table output only) |
 | **All Outputs** | Week 5 end | JSON, CSV, console table all working; caching in place | CLI with all formats, basic tests |
-| **UAT Complete** | Week 6 end | Field engineers validate accuracy and UX | UAT signoff, known-issues list |
-| **V1 Release** | Week 6 end | Documented, tested, released internally | v1.0 tag, user guide, CI/CD online |
+| **UAT Complete** | Week 6 end | Representative users validate accuracy and UX | UAT signoff, known-issues list |
+| **V1 Release** | Week 6 end | Documented, tested, and released | v1.0 tag, user guide, CI/CD online |
 | **Phase 2 Kickoff** | Week 7+ | Feedback analysis, prioritization | Roadmap for trend store & agentic features |
 
 ---
@@ -221,7 +221,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
    - **Recommendation:** Official SDK for abstraction, error handling, and long-term maintenance.
 
 ### 3. **Caching Backend**
-   - **Decision Required:** In-memory (simplest, process-scoped), local file (shared across runs), or external store (Redis, if scalable later)?
+   - **Decision Required:** In-memory (simplest, process-scoped), local file (shared across runs), or shared store (Redis, if scalable later)?
    - **Recommendation:** Local file for V1 (`.capacitychecker/cache/`), with clear TTL; upgrade to shared store if V2 multi-user support needed.
 
 ### 4. **Probe Strategy**
@@ -241,11 +241,11 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 ## Open Questions
 
 1. **Deployment & Distribution:**
-   - How should field engineers install and update this tool? (Pip package, downloadable binary, GitHub releases, Azure CLI plugin, Docker container?)
+   - How should users install and update this tool? (Pip package, downloadable binary, GitHub releases, Azure CLI plugin, Docker container?)
    - Should it be bundled with other Azure tools or standalone?
 
 2. **Authentication:**
-   - Can field engineers rely on their default Azure SDK auth (DefaultAzureCredential), or do we need interactive browser-based auth?
+   - Can users rely on their default Azure SDK auth (DefaultAzureCredential), or do we need interactive browser-based auth?
    - Should the tool work for "my subscription" or also allow cross-subscription/cross-tenant queries?
 
 3. **Spot Signal Availability:**
@@ -253,24 +253,24 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
    - If not, should we approximate from pricing or skip for V1?
 
 4. **Probe Cost & Risk:**
-   - If we include deployment probes, what is the acceptable cost (test VMs) and risk (customer environment interference)?
-   - Should probes run in a sandbox subscription or customer's subscription?
+   - If we include deployment probes, what is the acceptable cost (test VMs) and risk (environment interference)?
+   - Should probes run in a sandbox subscription or the target deployment subscription?
 
 5. **Freshness & SLA:**
-   - What is the acceptable data staleness for field engineers? (30s, 5min, 1hr?)
+   - What is the acceptable data staleness for deployment planning? (30s, 5min, 1hr?)
    - Should we warn users if cache is stale or API calls failed?
 
 6. **Scale & Concurrency:**
    - Are we optimizing for single-user CLI runs, or multi-user/scheduled backend runs?
    - Any concurrency limits on Azure API calls we should respect?
 
-7. **Customer Sharing:**
-   - Should field engineers be able to "download" a snapshot matrix to share with customers, or is that a Phase 3 feature (shareable HTML)?
-   - Any compliance/sensitivity around exposing capacity data to customers?
+7. **Stakeholder Sharing:**
+   - Should users be able to download a snapshot matrix for stakeholder sharing, or is that a Phase 3 feature (shareable HTML)?
+   - Any compliance/sensitivity around exposing capacity data outside the immediate deployment team?
 
 8. **Integration with Existing Tools:**
    - Does this replace or augment existing capacity/SKU tools (e.g., Azure Pricing API, ResourceSkus explorer in portal)?
-   - Should we integrate with internal dashboards or wikis?
+   - Should we integrate with dashboards or wikis?
 
 ---
 
@@ -279,19 +279,19 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 ### User Acceptance Testing (UAT)
 
 **Participants:**  
-- 2–3 field engineers who regularly advise customers on regional deployments.
+- 2–3 representative users who regularly make or validate regional deployment decisions.
 
 **Scenarios:**
 1. **Happy path:** "Give me a matrix for Standard_D4s_v5 and Standard_E8s_v5 across EU regions." Verify output accuracy and freshness.
 2. **Constrained SKU:** Test with a known-constrained SKU (e.g., high-memory in specific region); verify capacity-restricted flag is accurate.
 3. **Quota edge case:** Test with subscription that has low/zero quota in a region; verify headroom is accurate.
-4. **Output formats:** Verify JSON and CSV are usable (customer-shareable, import into tools).
+4. **Output formats:** Verify JSON and CSV are usable for stakeholder sharing and tool import.
 5. **Performance:** Measure time to run matrix for 5 SKUs × 10 regions; target <10s.
 
 **Success Criteria:**
-- Field engineers confirm output informs their region-selection conversation.
+- Representative users confirm output informs region-selection decisions.
 - No data accuracy issues vs. manual Azure portal checks.
-- Output formats are readily shareable with customers or internal dashboards.
+- Output formats are readily shareable with stakeholders or dashboards.
 - Performance meets expectations (no long waits).
 
 ### Data Quality Validation
@@ -315,14 +315,14 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 - [x] ResourceSkus API integration with per-run and persistent caching
 - [x] Quota/headroom integration using Azure CLI
 - [x] Spot Placement Score integration for optional Spot placement guidance
-- [x] Matrix schema and internal representation
+- [x] Matrix schema and data model
 - [x] Console table output
 - [x] JSON output format
 - [x] CSV output format
 - [x] Authentication & permission requirements documented
 - [ ] Unit & integration tests (baseline exists; coverage target still TBD)
 - [x] User guide and API docs baseline
-- [ ] Internal release (v1.0)
+- [ ] V1 release
 
 ### V1.1 – Enhancements & Hardening
 - [ ] Offline mode (cached fallback if APIs fail)
@@ -335,7 +335,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 - [ ] Historical trend store (time-series database)
 - [ ] Trend analysis (3-week tightening, etc.)
 - [ ] AI-powered summaries ("constrained in X regions, try Y")
-- [ ] Customer prep material generation
+- [ ] Deployment planning summary generation
 
 ### Phase 3 – Web & Sharing
 - [ ] Shareable HTML matrix view
@@ -357,7 +357,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 | **Azure API changes or deprecations** | Monitor Azure SDK release notes; maintain thin abstraction layer so APIs can be swapped. |
 | **Spot signal unavailability** | Design around it early; use pricing differential as fallback; ship with graceful "unknown" if unavailable. |
 | **Quota API latency** | Cache aggressively; document acceptable staleness; offer offline fallback. |
-| **Field engineer adoption low** | Gather feedback early (Week 2–3 prototype demos); co-design with 1–2 champions. |
+| **User adoption low** | Gather feedback early (Week 2–3 prototype demos); co-design with 1–2 champions. |
 | **Data accuracy doubts** | Provide source attribution (API, timestamp, cache status); encourage UAT spot-checks vs. portal. |
 | **Scope creep (agentic, web features)** | Lock V1 scope; defer Phase 2+ to separate roadmap; use feature flags if needed. |
 
@@ -366,11 +366,11 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 ## Success Criteria (V1 Release)
 
 ✅ CLI tool runs, accepts SKU/region inputs, and produces accurate matrix in <10s.  
-✅ Output in console, JSON, and CSV formats; all consumable by field engineers or dashboards.  
+✅ Output in console, JSON, and CSV formats; all consumable by users or dashboards.
 ✅ Allocatability/confidence signals inform region-selection decisions.  
 ✅ Caching reduces repeated queries to <3s.  
 ✅ Tested against real Azure APIs (or sandbox tenant).  
-✅ Field engineers confirm tool is useful and would use it before customer conversations.  
+✅ Representative users confirm tool is useful for deployment planning.
 ✅ Full documentation (user guide, API guide, troubleshooting).  
 ✅ CI/CD pipeline in place for future updates.
 
@@ -381,7 +381,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 1. **Performance:** Parallelize region fetches and benchmark 5 SKUs x 10 regions against the <10s target.
 2. **Offline fallback:** Add an explicit offline mode that can reuse stale cached entries when Azure APIs are unavailable.
 3. **Validation/UAT:** Compare Resource SKUs restrictions, quota output, and Spot Placement Score guidance against Azure portal for known constrained and healthy regions.
-4. **Release hardening:** Add CI, coverage reporting, installation guidance, and release notes for internal v1.0.
+4. **Release hardening:** Add CI, coverage reporting, installation guidance, and release notes for v1.0.
 
 ---
 

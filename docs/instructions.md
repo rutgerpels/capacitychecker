@@ -2,18 +2,18 @@
 
 ## Overview
 
-The Azure Multi-Region Capacity Checker is a command-line tool designed for field engineers to verify Azure VM availability, capacity constraints, and quota headroom across multiple regions and SKUs (VM sizes/families) **before** customer conversations and deployments.
+The Azure Multi-Region Capacity Checker is a command-line tool for checking Azure VM availability signals, capacity constraints, and quota headroom across multiple regions and SKUs (VM sizes/families) **within the Azure tenant and subscription context used to run it**.
 
 **Purpose:**
 - Turn Azure capacity from a guess into a **live, queryable signal**
-- Validate that recommended regions actually have available capacity
-- Support conversation prep with current, data-driven availability insights
+- Validate candidate regions before deployment planning
+- Support decision-making with current, data-driven availability insights
 - Export results for dashboards, alerts, and scheduled monitoring
 
 **Who is this for?**
-- Azure field engineers preparing customer engagements
-- Solution architects validating deployment guidance
-- Capacity planners reviewing regional saturation
+- Users who need subscription-scoped Azure capacity guidance
+- Solution architects validating deployment options
+- Capacity planners reviewing regional availability signals
 - Automation systems running scheduled capacity checks
 
 ---
@@ -147,8 +147,8 @@ Important caveat: Spot Placement Score is a Microsoft recommendation based on cu
 
 ### Example Scenarios
 
-#### Scenario 1: Validate Capacity Before Customer Call
-You are preparing to recommend `Standard_D2s_v5` in `swedencentral` to a customer.
+#### Scenario 1: Validate Capacity Before Deployment Planning
+You are evaluating `Standard_D2s_v5` in `swedencentral` for a planned deployment.
 
 ```bash
 # Check if it's available and has capacity:
@@ -226,7 +226,7 @@ Standard_E4s_v5      swedencentral   Yes      Yes         High           5 vCPU 
 - `Restricted: Yes` or `Unknown`
 - `Allocatable: Unknown`
 - `Confidence: Medium or Low`
-- Consider contacting the customer's Account Team for additional capacity
+- Consider alternate regions/SKUs or follow the appropriate capacity request process
 
 **Red Signal (Not Recommended):**
 - `Offered: No` — SKU not available in region
@@ -298,11 +298,11 @@ Standard_E4s_v5,eastus,true,false,medium,120,vCPU,likely_yes,high,180
 
 ---
 
-## Using Results in Customer Conversations
+## Using Results in Deployment Planning
 
-### Before the Call
+### Before Planning or Change Review
 
-1. **Run a check** targeting the SKUs and regions you plan to recommend:
+1. **Run a check** targeting the SKUs and regions you plan to evaluate:
    ```bash
    python -m capacitychecker check --skus Standard_D4s_v5,Standard_D8s_v5 \
      --regions swedencentral,germanywestcentral,northeurope
@@ -313,24 +313,24 @@ Standard_E4s_v5,eastus,true,false,medium,120,vCPU,likely_yes,high,180
    - Note any regions flagged as `Restricted: Yes` or with low quota headroom
    - Check freshness — if data is >1 hour old, consider rerunning
 
-3. **Prepare talking points:**
+3. **Prepare decision notes:**
    - "swedencentral currently looks healthy based on metadata, restrictions, and quota headroom"
    - "northeurope is restricted; I recommend we explore germanywestcentral or westeurope"
-   - "I verified this 10 minutes ago using our capacity checker"
+   - "This was checked 10 minutes ago in the active Azure subscription context"
 
-### During the Conversation
+### During Review
 
-- **Share confidence levels:** "We're highly confident in swedencentral availability; we checked 5 minutes ago"
+- **Share confidence levels:** "swedencentral currently has a high-confidence signal; it was checked 5 minutes ago"
 - **Explain alternatives:** Use the matrix to justify why Region A is recommended over Region B
-- **Set expectations:** "Quota headroom shows 30 vCPU available; this supports your immediate needs"
+- **Set expectations:** "Quota headroom shows 30 vCPU available in this subscription; this supports the immediate deployment size"
 
-### After the Conversation
+### After Review
 
-- **Export for your CRM/ticket system:**
+- **Export for your ticket, change record, or deployment notes:**
   ```bash
   python -m capacitychecker check --skus <agreed-skus> --regions <agreed-regions> --output json > ticket-12345-capacity.json
   ```
-- **Store for follow-up:** If the customer comes back with allocation issues, you'll have baseline data
+- **Store for follow-up:** If allocation behavior changes later, you have baseline data for comparison
 
 ---
 
@@ -368,8 +368,7 @@ az account set --subscription <your-subscription>
 
 **Solution:**
 ```bash
-# The MVP does not cache yet, so each live Azure run queries Azure CLI again.
-python -m capacitychecker check --sku Standard_D2s_v5 --region eastus
+python -m capacitychecker check --sku Standard_D2s_v5 --region eastus --no-cache
 ```
 
 ### Quota Headroom Shows "Unknown" or "Unlimited"
@@ -451,7 +450,7 @@ capacitychecker check --skus Standard_D2s_v5 --regions eastus,swedencentral \
 
 3. **Quota-Based Only**  
    - Quota headroom is subscription-specific and should not be treated as global Azure capacity
-   - A region may look healthy for one subscription and still require separate validation for another customer context
+   - A region may look healthy for one subscription and still require separate validation in another tenant or subscription
 
 4. **CLI-Only Interface**  
    - No web UI or dashboard (V1)
@@ -459,7 +458,7 @@ capacitychecker check --skus Standard_D2s_v5 --regions eastus,swedencentral \
 
 5. **Manual Region/SKU Selection**  
    - No built-in recommendation engine; you choose regions/SKUs to check
-   - Stretch goal: agentic analysis and conversation prep material
+   - Stretch goal: agentic analysis and deployment planning summaries
 
 6. **Spot Pressure is Derived**  
    - Spot pressure depends on whichever trustworthy Spot-related signals are validated during implementation
@@ -484,19 +483,19 @@ capacitychecker check --skus Standard_D2s_v5 --regions eastus,swedencentral \
 ## FAQ
 
 **Q: Why does my recommended region now show "Restricted: Yes"?**  
-A: Azure capacity is dynamic. Regions can transition from healthy to constrained. Re-run the check before every customer conversation to ensure current guidance.
+A: Azure capacity is dynamic. Regions can transition from healthy to constrained. Re-run the check before making deployment decisions.
 
 **Q: Can I check capacity across multiple subscriptions?**  
 A: The tool operates within your current Azure CLI context (one subscription at a time). To check multiple subscriptions, run separate checks after switching with `az account set`.
 
 **Q: What if the SKU I want isn't offered in any of my regions?**  
-A: This is often regional availability (e.g., some new SKUs roll out gradually). Check Azure's official [Regions and Availability Zones](https://azure.microsoft.com/en-us/global-infrastructure/availability-zones/) page or contact your Microsoft Account Team for timeline.
+A: This is often regional availability (e.g., some new SKUs roll out gradually). Check Azure's official [Regions and Availability Zones](https://azure.microsoft.com/en-us/global-infrastructure/availability-zones/) page and the relevant Azure capacity or support process for your environment.
 
 **Q: How do I know if a region is about to run out of capacity?**  
 A: Watch for `Spot Pressure: High` and `Quota Headroom` trending downward over successive checks. If available, run the tool weekly and archive results in `capacity-history/`.
 
 **Q: Is "Allocatable: Unknown" safe to recommend?**  
-A: Use caution. This typically means the metadata, quota, or restriction signals are incomplete, stale, or inconclusive. Consider checking alternatives or reaching out to the Account Team before committing this to a customer.
+A: Use caution. This typically means the metadata, quota, or restriction signals are incomplete, stale, or inconclusive. Consider checking alternatives before committing to the deployment plan.
 
 **Q: Can I schedule this tool to run automatically?**  
 A: Yes. See the "Scheduled Capacity Monitoring" section under Advanced Usage.
@@ -509,7 +508,7 @@ For issues, questions, or feedback:
 
 - **Documentation:** Refer to this guide and the project README
 - **Issue Tracking:** Report bugs or request features via the project repository (when available)
-- **Microsoft Account Team:** For capacity-related questions or large-scale deployment planning, engage your Account Team
+- **Capacity support path:** For capacity-related questions or large-scale deployment planning, use the appropriate Azure support or capacity request process for your environment
 
 ---
 
