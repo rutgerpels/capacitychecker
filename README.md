@@ -7,6 +7,7 @@ The tool runs against Azure CLI live data.
 ```powershell
 python -m capacitychecker check --sku Standard_D2s_v5 --region eastus
 python -m capacitychecker check --skus Standard_D2s_v5,Standard_E4s_v5 --regions eastus,swedencentral --output json
+python -m capacitychecker check --skus Standard_D2s_v5,Standard_E4s_v5 --regions eastus,swedencentral --max-workers 4
 python -m capacitychecker check --sku Standard_D2s_v5 --region eastus --include-spot-score --spot-desired-count 1
 python -m capacitychecker check --cache-info
 ```

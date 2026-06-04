@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import threading
 from typing import Any, Protocol
 from urllib.parse import quote
 
@@ -56,7 +57,9 @@ class AzureCliProvider:
         self.cache_enabled = cache_enabled
         self._subscription_id: str | None = None
         self._sku_cache: dict[str, list[dict[str, Any]]] = {}
-        self._cache_notes: list[str] = []
+        self._cache_notes = threading.local()
+        self._sku_cache_lock = threading.Lock()
+        self._subscription_lock = threading.Lock()
 
     @property
     def source_name(self) -> str:
@@ -70,9 +73,10 @@ class AzureCliProvider:
 
     def _resource_skus(self, region: str) -> list[dict[str, Any]]:
         cache_key = region.casefold()
-        cached_rows = self._sku_cache.get(cache_key)
+        with self._sku_cache_lock:
+            cached_rows = self._sku_cache.get(cache_key)
         if cached_rows is not None:
-            self._cache_notes.append(f"ResourceSkus in-memory cache hit for {region}.")
+            self._add_cache_note(f"ResourceSkus in-memory cache hit for {region}.")
             return cached_rows
 
         resolved_subscription_id = self._resolve_subscription_id()
@@ -111,8 +115,10 @@ class AzureCliProvider:
         if not isinstance(rows, list):
             raise ProviderError("Azure Resource SKUs API returned unexpected JSON; expected a value list.")
 
-        self._sku_cache[cache_key] = [row for row in rows if isinstance(row, dict)]
-        return self._sku_cache[cache_key]
+        filtered_rows = [row for row in rows if isinstance(row, dict)]
+        with self._sku_cache_lock:
+            self._sku_cache[cache_key] = filtered_rows
+        return filtered_rows
 
     def list_usage(self, region: str) -> list[dict[str, Any]]:
         command = [
@@ -187,11 +193,15 @@ class AzureCliProvider:
         if self._subscription_id:
             return self._subscription_id
 
-        command = [self._az_command(), "account", "show", "--query", "id", "--output", "tsv"]
-        self._subscription_id = self._run_text(command).strip()
-        if not self._subscription_id:
-            raise ProviderError("Azure CLI did not return a subscription id.")
-        return self._subscription_id
+        with self._subscription_lock:
+            if self._subscription_id:
+                return self._subscription_id
+
+            command = [self._az_command(), "account", "show", "--query", "id", "--output", "tsv"]
+            self._subscription_id = self._run_text(command).strip()
+            if not self._subscription_id:
+                raise ProviderError("Azure CLI did not return a subscription id.")
+            return self._subscription_id
 
     def _cache_subscription_key(self) -> str:
         if not self.cache_enabled or self.cache_store is None:
@@ -199,9 +209,16 @@ class AzureCliProvider:
         return self._resolve_subscription_id()
 
     def cache_notes(self) -> list[str]:
-        notes = self._cache_notes
-        self._cache_notes = []
+        notes = list(getattr(self._cache_notes, "notes", []))
+        self._cache_notes.notes = []
         return notes
+
+    def _add_cache_note(self, note: str) -> None:
+        notes = getattr(self._cache_notes, "notes", None)
+        if notes is None:
+            notes = []
+            self._cache_notes.notes = notes
+        notes.append(note)
 
     def _az_command(self) -> str:
         executable = self.az_executable or shutil.which("az")
@@ -241,7 +258,7 @@ class AzureCliProvider:
         command: list[str],
     ) -> Any:
         if not self.cache_enabled or self.cache_store is None:
-            self._cache_notes.append(f"{namespace} cache bypassed.")
+            self._add_cache_note(f"{namespace} cache bypassed.")
             return self._run_json(command)
 
         try:
@@ -250,10 +267,10 @@ class AzureCliProvider:
             raise ProviderError(str(exc)) from exc
 
         if cached is not None:
-            self._cache_notes.append(f"{namespace} cache hit; age {cached.age_seconds}s.")
+            self._add_cache_note(f"{namespace} cache hit; age {cached.age_seconds}s.")
             return cached.value
 
-        self._cache_notes.append(f"{namespace} cache miss.")
+        self._add_cache_note(f"{namespace} cache miss.")
         response = self._run_json(command)
         try:
             self.cache_store.set(namespace, key_data, response, ttl_seconds)

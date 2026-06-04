@@ -89,6 +89,9 @@ python -m capacitychecker check --sku Standard_D2s_v5 --region eastus
 # Multiple SKUs, multiple regions (creates matrix)
 python -m capacitychecker check --skus Standard_D2s_v5,Standard_E4s_v5 --regions eastus,swedencentral,eastasia
 
+# Bound parallel region workers for larger matrices
+python -m capacitychecker check --skus Standard_D2s_v5,Standard_E4s_v5 --regions eastus,swedencentral,eastasia --max-workers 4
+
 # With zones (if region is zoned)
 python -m capacitychecker check --skus Standard_D2s_v5 --regions eastus --zones 1,2,3
 
@@ -109,6 +112,20 @@ python -m capacitychecker check --sku Standard_D2s_v5 --region eastus
 ```
 
 Use `--skip-live-sku-metadata` for quota-only checks.
+
+### Performance Controls
+
+The CLI fetches independent regions in parallel by default, capped at 4 workers. Use `--max-workers` to tune concurrency for your environment:
+
+```bash
+# Reduce concurrency if you see throttling or transient Azure CLI failures
+python -m capacitychecker check --skus Standard_D2s_v5,Standard_E4s_v5 --regions eastus,swedencentral,eastasia --max-workers 2
+
+# Increase cautiously for larger matrices
+python -m capacitychecker check --skus Standard_D2s_v5,Standard_E4s_v5 --regions eastus,swedencentral,eastasia --max-workers 6
+```
+
+Higher values can reduce runtime for cold cache runs, but they also increase concurrent Azure CLI/API calls. Keep the value conservative when running in constrained networks or subscriptions.
 
 ### Persistent Cache
 
@@ -390,6 +407,7 @@ python -m capacitychecker check --sku Standard_D2s_v5 --region eastus --no-cache
 
 **Solution:**
 - Reduce the number of SKUs/regions in a single check
+- Reduce parallelism with `--max-workers 1` or `--max-workers 2`
 - Check your internet connectivity
 - Retry the command (temporary Azure service delays)
 

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import csv
 import json
+import threading
+import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
@@ -53,6 +55,7 @@ class CliTests(unittest.TestCase):
         self.assertFalse(opt_out_args.enable_live_sku_metadata)
         self.assertTrue(spot_args.include_spot_score)
         self.assertEqual(spot_args.spot_desired_count, 2)
+        self.assertEqual(default_args.max_workers, 4)
 
     def test_cache_flags_are_available(self) -> None:
         parser = _build_parser()
@@ -60,6 +63,12 @@ class CliTests(unittest.TestCase):
         args = parser.parse_args(["check", "--sku", "Standard_D2s_v5", "--region", "eastus", "--no-cache"])
 
         self.assertTrue(args.no_cache)
+
+    def test_max_workers_must_be_positive(self) -> None:
+        code, _, stderr = self.run_cli("check", "--sku", "Standard_D2s_v5", "--region", "eastus", "--max-workers", "0")
+
+        self.assertEqual(code, 1)
+        self.assertIn("max-workers", stderr)
 
     def test_cache_info_does_not_require_sku_or_region(self) -> None:
         with TemporaryDirectory() as temp_dir:
@@ -197,6 +206,32 @@ class SpotScoreProvider:
         ]
 
 
+class TrackingProvider:
+    source_name = "tracking-test"
+
+    def __init__(self) -> None:
+        self.active_usage_calls = 0
+        self.max_active_usage_calls = 0
+        self.lock = threading.Lock()
+
+    def list_skus(self, region: str, sku: str):
+        return [{"name": sku, "locations": [region], "locationInfo": [{"location": region, "zones": []}], "restrictions": []}]
+
+    def list_usage(self, region: str):
+        with self.lock:
+            self.active_usage_calls += 1
+            self.max_active_usage_calls = max(self.max_active_usage_calls, self.active_usage_calls)
+        try:
+            time.sleep(0.02)
+            return [{"name": {"value": "standardDSv5Family"}, "currentValue": "1", "limit": "10"}]
+        finally:
+            with self.lock:
+                self.active_usage_calls -= 1
+
+    def list_spot_placement_scores(self, regions, skus, zones, desired_count):
+        return None
+
+
 class MatrixTests(unittest.TestCase):
     def test_table_output_uses_static_provider_data(self) -> None:
         rows = build_matrix(StaticCapacityProvider(), ["Standard_D2s_v5"], ["eastus"], [None])
@@ -259,6 +294,22 @@ class MatrixTests(unittest.TestCase):
         self.assertTrue(rows[0].spot_quota_available)
         self.assertEqual(rows[0].allocatable, "likely_yes")
         self.assertIn("not a guarantee", " ".join(rows[0].notes))
+
+    def test_build_matrix_parallelizes_regions_with_worker_limit(self) -> None:
+        provider = TrackingProvider()
+
+        rows = build_matrix(
+            provider,
+            ["Standard_D2s_v5"],
+            ["eastus", "westus2", "centralus", "swedencentral"],
+            [None],
+            max_workers=2,
+        )
+
+        self.assertEqual(len(rows), 4)
+        self.assertEqual([row.region for row in rows], ["eastus", "westus2", "centralus", "swedencentral"])
+        self.assertGreaterEqual(provider.max_active_usage_calls, 2)
+        self.assertLessEqual(provider.max_active_usage_calls, 2)
 
 
 if __name__ == "__main__":
