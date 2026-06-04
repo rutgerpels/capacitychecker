@@ -83,8 +83,8 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 
 ### Metadata & Caching
 
-- **Cache strategy:** ResourceSkus (long-lived, 10–60min); Quota (medium, 2–5min); Spot signals (short, 1–2min).
-- **Offline mode (optional V1):** Load previously cached matrix if live APIs unavailable.
+- **Cache strategy:** ResourceSkus (about 60min); Quota (about 5min); Spot Placement Score (about 2min).
+- **Offline mode (optional V1.1):** Load previously cached matrix if live APIs unavailable.
 - **Source attribution:** Every cell includes metadata so users know how fresh the data is and whether to trust it.
 - **MVP live-mode implementation:** live Azure mode avoids `az vm list-skus` because validation showed it can hang or time out. It now uses `az rest` against the Azure Resource SKUs ARM endpoint by default for offered/restricted signals. Use `--skip-live-sku-metadata` for quota-only checks.
 
@@ -148,11 +148,11 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 ### 4. **Caching & Offline** (Week 4–5)
    - **Goal:** Add caching layer and optional offline fallback.
    - **Tasks:**
-     - Design cache key strategy (per API, per region, per tenant).
-     - Implement local file or in-memory cache with TTL.
+     - [x] Design cache key strategy (per API, per region, per subscription, and Spot request shape).
+     - [x] Implement local file-backed cache with TTL.
      - Implement cache invalidation logic.
      - Implement optional offline mode (load cached matrix if APIs fail).
-     - Add cache diagnostics (--show-cache, --clear-cache, --cache-info).
+     - [x] Add cache diagnostics (`--cache-info`, `--clear-cache`) and bypass (`--no-cache`).
    - **Outputs:** Caching logic, offline mode, cache CLI commands.
 
 ### 5. **Authentication & Authorization** (Week 2–3)
@@ -312,7 +312,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 ### V1 Core (MVP)
 - [x] Architecture & API integration baseline
 - [x] CLI with SKU/region input parsing
-- [x] ResourceSkus API integration with per-run in-memory caching
+- [x] ResourceSkus API integration with per-run and persistent caching
 - [x] Quota/headroom integration using Azure CLI
 - [x] Spot Placement Score integration for optional Spot placement guidance
 - [x] Matrix schema and internal representation
@@ -327,7 +327,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 ### V1.1 – Enhancements & Hardening
 - [ ] Offline mode (cached fallback if APIs fail)
 - [ ] Improved error messages and troubleshooting
-- [ ] Performance optimization (parallel API calls, persistent caching)
+- [ ] Performance optimization (parallel API calls; persistent caching baseline is complete)
 - [ ] Shell completions (bash, zsh, PowerShell)
 - [ ] Optional probe feature (allocatability test, opt-in)
 
@@ -378,8 +378,8 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 
 ## Next Steps
 
-1. **Persistent caching:** Add cache storage/TTL so repeated region/SKU checks are faster and can support offline fallback.
-2. **Performance:** Parallelize region fetches and benchmark 5 SKUs x 10 regions against the <10s target.
+1. **Performance:** Parallelize region fetches and benchmark 5 SKUs x 10 regions against the <10s target.
+2. **Offline fallback:** Add an explicit offline mode that can reuse stale cached entries when Azure APIs are unavailable.
 3. **Validation/UAT:** Compare Resource SKUs restrictions, quota output, and Spot Placement Score guidance against Azure portal for known constrained and healthy regions.
 4. **Release hardening:** Add CI, coverage reporting, installation guidance, and release notes for internal v1.0.
 

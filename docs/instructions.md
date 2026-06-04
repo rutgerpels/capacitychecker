@@ -95,6 +95,9 @@ python -m capacitychecker check --skus Standard_D2s_v5 --regions eastus --zones 
 # Include Microsoft Spot Placement Score guidance for Spot VM placement likelihood
 python -m capacitychecker check --sku Standard_D2s_v5 --region eastus --include-spot-score --spot-desired-count 1
 
+# Inspect persistent cache state
+python -m capacitychecker check --cache-info
+
 ```
 
 ### Live Azure Mode
@@ -106,6 +109,29 @@ python -m capacitychecker check --sku Standard_D2s_v5 --region eastus
 ```
 
 Use `--skip-live-sku-metadata` for quota-only checks.
+
+### Persistent Cache
+
+The CLI uses a persistent local cache by default to reduce repeated Azure CLI calls:
+
+- Resource SKUs metadata: cached for about 60 minutes.
+- Quota/headroom usage: cached for about 5 minutes.
+- Spot Placement Score responses: cached for about 2 minutes.
+
+Cache entries are stored under your user profile in `.capacitychecker\cache`. Use these flags to control cache behavior:
+
+```bash
+# Bypass cache reads and writes for one live run
+python -m capacitychecker check --sku Standard_D2s_v5 --region eastus --no-cache
+
+# Show cache location and entry summary
+python -m capacitychecker check --cache-info
+
+# Clear persisted cache entries
+python -m capacitychecker check --clear-cache
+```
+
+Expired cache entries are not used as an offline fallback yet; they are treated as misses and refreshed from Azure.
 
 ### Spot Placement Score
 
