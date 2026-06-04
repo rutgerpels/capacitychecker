@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 from . import __version__
 from .matrix import build_matrix
-from .providers import AzureCliProvider, FixtureProvider, ProviderError
+from .providers import AzureCliProvider, ProviderError
 from .renderers import render_csv, render_json, render_table, write_output
 
 
@@ -67,8 +66,6 @@ def _build_parser() -> argparse.ArgumentParser:
         default=1,
         help="Desired Spot VM instance count to use with --include-spot-score. Default: 1.",
     )
-    check.add_argument("--mock-skus-file", type=Path, help="Path to fixture JSON that mimics 'az vm list-skus' output.")
-    check.add_argument("--mock-usage-file", type=Path, help="Path to fixture JSON that mimics 'az vm list-usage' output.")
     check.add_argument(
         "--enable-live-sku-metadata",
         dest="enable_live_sku_metadata",
@@ -85,11 +82,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _build_provider(args: argparse.Namespace) -> AzureCliProvider | FixtureProvider:
-    if args.mock_skus_file:
-        return FixtureProvider(args.mock_skus_file, args.mock_usage_file)
-    if args.mock_usage_file:
-        raise ValueError("--mock-usage-file requires --mock-skus-file.")
+def _build_provider(args: argparse.Namespace) -> AzureCliProvider:
     return AzureCliProvider(subscription=args.subscription, enable_live_sku_metadata=args.enable_live_sku_metadata)
 
 

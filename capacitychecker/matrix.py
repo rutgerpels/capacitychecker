@@ -85,7 +85,7 @@ def _build_row(
         else:
             allocatable = "unknown"
             confidence = "low"
-            notes.append("Live SKU metadata is unavailable in MVP live mode; use fixture data or opt in to live SKU metadata for offered/restricted signals.")
+            notes.append("Live SKU metadata is unavailable; enable live SKU metadata for offered/restricted signals.")
     elif not offered:
         allocatable = "no"
         confidence = "high"

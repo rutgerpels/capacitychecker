@@ -2,7 +2,7 @@
 
 CLI-first MVP for checking Azure VM SKU availability signals across regions.
 
-The tool can run against Azure CLI live data or local JSON fixtures for repeatable tests and demos.
+The tool runs against Azure CLI live data.
 
 ```powershell
 python -m capacitychecker check --sku Standard_D2s_v5 --region eastus

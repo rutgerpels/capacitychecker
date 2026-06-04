@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import quote
 
@@ -158,9 +157,7 @@ class AzureCliProvider:
         executable = self.az_executable or shutil.which("az")
         if executable:
             return executable
-        raise ProviderError(
-            "Azure CLI executable 'az' was not found. Install Azure CLI or use mock fixture files."
-        )
+        raise ProviderError("Azure CLI executable 'az' was not found. Install Azure CLI.")
 
     def _run_text(self, command: list[str]) -> str:
         if self.subscription:
@@ -169,9 +166,7 @@ class AzureCliProvider:
         try:
             completed = subprocess.run(command, check=False, capture_output=True, text=True, timeout=60)
         except FileNotFoundError as exc:
-            raise ProviderError(
-                "Azure CLI executable 'az' was not found. Install Azure CLI or use mock fixture files."
-            ) from exc
+            raise ProviderError("Azure CLI executable 'az' was not found. Install Azure CLI.") from exc
         except subprocess.TimeoutExpired as exc:
             raise ProviderError(f"Azure CLI command timed out: {' '.join(command)}") from exc
 
@@ -187,55 +182,6 @@ class AzureCliProvider:
             return json.loads(stdout or "[]")
         except json.JSONDecodeError as exc:
             raise ProviderError("Azure CLI returned invalid JSON.") from exc
-
-
-class FixtureProvider:
-    def __init__(self, skus_file: Path, usage_file: Path | None = None) -> None:
-        self.skus_data = _read_json(skus_file)
-        self.usage_data = _read_json(usage_file) if usage_file else {}
-
-    @property
-    def source_name(self) -> str:
-        return "fixture"
-
-    def list_skus(self, region: str, sku: str) -> list[dict[str, Any]]:
-        rows = _select_region_rows(self.skus_data, region)
-        return [row for row in rows if _casefold(row.get("name")) == _casefold(sku)]
-
-    def list_usage(self, region: str) -> list[dict[str, Any]]:
-        return _select_region_rows(self.usage_data, region)
-
-    def list_spot_placement_scores(
-        self,
-        regions: list[str],
-        skus: list[str],
-        zones: list[str | None],
-        desired_count: int,
-    ) -> list[dict[str, Any]] | None:
-        return None
-
-
-def _read_json(path: Path | None) -> Any:
-    if path is None:
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise ProviderError(f"Fixture file not found: {path}") from exc
-    except json.JSONDecodeError as exc:
-        raise ProviderError(f"Fixture file contains invalid JSON: {path}") from exc
-
-
-def _select_region_rows(data: Any, region: str) -> list[dict[str, Any]]:
-    if isinstance(data, dict):
-        rows = data.get(region, [])
-    else:
-        rows = data
-
-    if not isinstance(rows, list):
-        return []
-    return [row for row in rows if isinstance(row, dict)]
-
 
 def _casefold(value: Any) -> str:
     return str(value or "").casefold()

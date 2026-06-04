@@ -16,10 +16,10 @@ The Azure Multi-Region Capacity Checker is a CLI-first tool designed to transfor
 
 - **Repo:** `capacitychecker_v2` (fresh start)
 - **Team:** Azure Capacity / Field Engineering alignment
-- **Inputs:** CLI accepts one or more SKUs, one or more regions, optional zones, optional subscription, and fixture files for deterministic runs.
+- **Inputs:** CLI accepts one or more SKUs, one or more regions, optional zones, and optional subscription.
 - **Outputs:** Console table, JSON, and CSV are implemented.
 - **Live Azure data:** Default live mode queries quota/headroom with `az vm list-usage` and offered/restricted metadata through the Azure Resource SKUs ARM endpoint via `az rest`.
-- **Maturity:** MVP/pre-alpha. Core CLI works against live Azure and fixtures; caching, Spot pressure, CI/CD, and broader UAT remain open.
+- **Maturity:** MVP/pre-alpha. Core CLI works against live Azure; caching, CI/CD, and broader UAT remain open.
 
 ---
 
@@ -168,7 +168,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
    - **Goal:** Ensure accuracy, performance, and user experience.
    - **Tasks:**
      - Unit tests for matrix schema, data transformation, and output formatting.
-     - Integration tests with mock Azure APIs (or sandbox tenant if available).
+     - Integration tests with recorded Azure responses or a sandbox tenant if available.
      - End-to-end tests (CLI invocation, data fetch, output validation).
      - Performance tests (time to fetch N regions × M SKUs, cache hit rates).
      - User acceptance testing with 2–3 field engineers.

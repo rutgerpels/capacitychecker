@@ -95,9 +95,6 @@ python -m capacitychecker check --skus Standard_D2s_v5 --regions eastus --zones 
 # Include Microsoft Spot Placement Score guidance for Spot VM placement likelihood
 python -m capacitychecker check --sku Standard_D2s_v5 --region eastus --include-spot-score --spot-desired-count 1
 
-# Fixture-backed demo/test mode, with no Azure login required
-python -m capacitychecker check --skus Standard_D2s_v5,Standard_E4s_v5 --regions eastus,swedencentral \
-  --mock-skus-file tests\fixtures\skus.json --mock-usage-file tests\fixtures\usage.json
 ```
 
 ### Live Azure Mode
@@ -108,7 +105,7 @@ By default, live mode uses Azure CLI for both quota/headroom and Resource SKUs m
 python -m capacitychecker check --sku Standard_D2s_v5 --region eastus
 ```
 
-Use `--skip-live-sku-metadata` for quota-only checks, or fixture mode when you need deterministic offered/restricted behavior for demos or tests.
+Use `--skip-live-sku-metadata` for quota-only checks.
 
 ### Spot Placement Score
 
