@@ -1,7 +1,7 @@
 # Azure Multi-Region Capacity Checker – Roadmap
 
-**Last Updated:** 2026-06-03  
-**Status:** V1 Planning  
+**Last Updated:** 2026-06-04
+**Status:** MVP implemented; V1 hardening in progress
 **Audience:** Internal product team, field engineers, Azure capacity stakeholders
 
 ---
@@ -16,9 +16,10 @@ The Azure Multi-Region Capacity Checker is a CLI-first tool designed to transfor
 
 - **Repo:** `capacitychecker_v2` (fresh start)
 - **Team:** Azure Capacity / Field Engineering alignment
-- **Inputs:** None yet (design phase)
-- **Outputs:** None yet (design phase)
-- **Maturity:** Pre-alpha; requirements and architecture in progress
+- **Inputs:** CLI accepts one or more SKUs, one or more regions, optional zones, optional subscription, and fixture files for deterministic runs.
+- **Outputs:** Console table, JSON, and CSV are implemented.
+- **Live Azure data:** Default live mode queries quota/headroom with `az vm list-usage` and offered/restricted metadata through the Azure Resource SKUs ARM endpoint via `az rest`.
+- **Maturity:** MVP/pre-alpha. Core CLI works against live Azure and fixtures; caching, Spot pressure, CI/CD, and broader UAT remain open.
 
 ---
 
@@ -85,7 +86,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 - **Cache strategy:** ResourceSkus (long-lived, 10–60min); Quota (medium, 2–5min); Spot signals (short, 1–2min).
 - **Offline mode (optional V1):** Load previously cached matrix if live APIs unavailable.
 - **Source attribution:** Every cell includes metadata so users know how fresh the data is and whether to trust it.
-- **MVP live-mode caveat:** live Azure mode should avoid `az vm list-skus` by default because validation showed it can hang or time out. Use `az vm list-usage` for quota/headroom in the MVP, fixture data for deterministic offered/restricted behavior, and a cached SKU metadata service or robust REST integration post-MVP.
+- **MVP live-mode implementation:** live Azure mode avoids `az vm list-skus` because validation showed it can hang or time out. It now uses `az rest` against the Azure Resource SKUs ARM endpoint by default for offered/restricted signals. Use `--skip-live-sku-metadata` for quota-only checks.
 
 ---
 
@@ -113,34 +114,35 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 ### 1. **Architecture & API Integration** (Week 1–2)
    - **Goal:** Finalize how to call Azure ResourceSkus, Quota, Spot, and optional Probe APIs.
    - **Tasks:**
-     - Document Azure ResourceSkus API schema and filtering options.
-     - Document Azure Quota API schema (subscription-scoped quota lookups).
+     - [x] Document Azure ResourceSkus API schema and filtering options.
+     - [x] Document Azure quota/headroom lookup behavior for the current Azure CLI-backed MVP.
      - Identify Spot signal source (pricing API, documented telemetry, or leave as unknown if no trustworthy source exists).
-     - Document post-V1 probe strategy without implementing it in the v1 critical path.
+     - [x] Document post-V1 probe strategy without implementing it in the v1 critical path.
      - Decide on SDK choice (Azure SDK for Python/Go/Node, or raw REST calls).
-     - Design schema for canonical matrix internal representation.
+     - [x] Design schema for canonical matrix internal representation.
    - **Outputs:** Architecture decision doc, API integration guide, matrix schema (JSON).
 
 ### 2. **Core CLI & Data Fetching** (Week 2–4)
    - **Goal:** Implement CLI argument parsing and data-fetching logic.
    - **Tasks:**
-     - Implement SKU and region input validation/normalization.
-     - Implement ResourceSkus API queries with caching layer.
-     - Implement Quota API queries (authenticated, subscription-scoped).
+     - [x] Implement SKU and region input parsing/normalization.
+     - [x] Implement ResourceSkus API queries through `az rest` with per-run in-memory caching.
+     - [x] Implement quota/headroom queries through `az vm list-usage`.
      - Implement Spot signal fetch (or mock if API unavailable).
-     - Model allocatability as a metadata-derived status with confidence.
-     - Build in-memory matrix representation and enrichment.
-     - Add basic error handling and user feedback.
+     - [x] Model allocatability as a metadata-derived status with confidence.
+     - [x] Build in-memory matrix representation and enrichment.
+     - [x] Add basic error handling and user feedback.
    - **Outputs:** Working CLI that fetches and combines data into matrix form.
 
 ### 3. **Output Formatting** (Week 3–5)
    - **Goal:** Render matrix in console, JSON, and CSV formats.
    - **Tasks:**
-     - Implement console table rendering (ASCII, colored, sortable).
-     - Implement JSON serialization with full metadata.
-     - Implement CSV export with appropriate headers and escaping.
-     - Add output flags (--format json/csv/table, --sort-by, --filter, etc.).
-     - Add pretty-printing and validation before output.
+     - [x] Implement console table rendering.
+     - [x] Implement JSON serialization with metadata.
+     - [x] Implement CSV export with appropriate headers and escaping.
+     - [x] Add output flags for table/json/csv.
+     - Add sorting/filtering flags.
+     - Add richer pretty-printing and validation before output.
    - **Outputs:** CLI producing all three output formats; integration tests.
 
 ### 4. **Caching & Offline** (Week 4–5)
@@ -308,24 +310,24 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 ## Suggested Backlog
 
 ### V1 Core (MVP)
-- [ ] Architecture & API integration finalized
-- [ ] CLI with SKU/region input validation
-- [ ] ResourceSkus API integration with caching
-- [ ] Quota API integration (subscription-scoped)
+- [x] Architecture & API integration baseline
+- [x] CLI with SKU/region input parsing
+- [x] ResourceSkus API integration with per-run in-memory caching
+- [x] Quota/headroom integration using Azure CLI
 - [ ] Spot signal integration (or mock)
-- [ ] Matrix schema and internal representation
-- [ ] Console table output (with sorting/filtering)
-- [ ] JSON output format
-- [ ] CSV output format
-- [ ] Authentication & permission requirements
-- [ ] Unit & integration tests (70%+ coverage)
-- [ ] User guide and API docs
+- [x] Matrix schema and internal representation
+- [x] Console table output
+- [x] JSON output format
+- [x] CSV output format
+- [x] Authentication & permission requirements documented
+- [ ] Unit & integration tests (baseline exists; coverage target still TBD)
+- [x] User guide and API docs baseline
 - [ ] Internal release (v1.0)
 
 ### V1.1 – Enhancements & Hardening
 - [ ] Offline mode (cached fallback if APIs fail)
 - [ ] Improved error messages and troubleshooting
-- [ ] Performance optimization (parallel API calls, smarter caching)
+- [ ] Performance optimization (parallel API calls, persistent caching)
 - [ ] Shell completions (bash, zsh, PowerShell)
 - [ ] Optional probe feature (allocatability test, opt-in)
 
@@ -376,13 +378,11 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 
 ## Next Steps
 
-1. **Kick-off meeting:** Finalize architecture, API strategy, and tool design (Week 1 start).
-2. **API integration spike:** Prototype fetching from ResourceSkus, Quota, Spot APIs (Week 1).
-3. **Schema finalization:** Agree on matrix schema and internal representation (Week 1 end).
-4. **Core development begins:** Implement CLI and data fetching (Week 2 start).
-5. **Weekly syncs:** Track progress, unblock, and adjust scope if needed.
-6. **UAT setup:** Recruit 2–3 field engineers for feedback (Week 4).
-7. **Release prep:** Documentation, CI/CD, internal communication (Week 6).
+1. **Spot signal decision:** Confirm whether V1 should keep Spot as `unknown`, use a pricing-derived heuristic, or defer the column.
+2. **Persistent caching:** Add cache storage/TTL so repeated region/SKU checks are faster and can support offline fallback.
+3. **Performance:** Parallelize region fetches and benchmark 5 SKUs x 10 regions against the <10s target.
+4. **Validation/UAT:** Compare Resource SKUs restrictions and quota output against Azure portal for known constrained and healthy regions.
+5. **Release hardening:** Add CI, coverage reporting, installation guidance, and release notes for internal v1.0.
 
 ---
 
