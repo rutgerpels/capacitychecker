@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import subprocess
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
+from capacitychecker.cache import CacheStore
 from capacitychecker.providers import AzureCliProvider, ProviderError
 
 
@@ -91,6 +94,83 @@ class AzureCliProviderTests(unittest.TestCase):
             self.assertEqual(provider.list_skus("eastus", "Standard_E4s_v5"), [{"name": "Standard_E4s_v5"}])
 
         self.assertEqual(run.call_count, 2)
+
+    def test_persistent_cache_hit_skips_resource_skus_cli_call(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            cache = CacheStore(Path(temp_dir), now=lambda: 1000.0)
+            cache.set(
+                "resource-skus",
+                {
+                    "api_version": "2021-07-01",
+                    "subscription": "sub-123",
+                    "region": "eastus",
+                },
+                {"value": [{"name": "Standard_D2s_v5"}]},
+                ttl_seconds=3600,
+            )
+
+            account = subprocess.CompletedProcess(args=[], returncode=0, stdout="sub-123\n", stderr="")
+            with patch("capacitychecker.providers.subprocess.run", return_value=account) as run:
+                rows = AzureCliProvider(az_executable="az", cache_store=cache).list_skus("eastus", "Standard_D2s_v5")
+
+        self.assertEqual(rows, [{"name": "Standard_D2s_v5"}])
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][:3], ["az", "account", "show"])
+
+    def test_persistent_cache_hit_skips_usage_cli_call(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            cache = CacheStore(Path(temp_dir), now=lambda: 1000.0)
+            cache.set(
+                "usage",
+                {"subscription": "sub-123", "region": "eastus"},
+                [{"name": {"value": "standardDSv5Family"}, "currentValue": 1, "limit": 10}],
+                ttl_seconds=300,
+            )
+
+            account = subprocess.CompletedProcess(args=[], returncode=0, stdout="sub-123\n", stderr="")
+            with patch("capacitychecker.providers.subprocess.run", return_value=account) as run:
+                rows = AzureCliProvider(az_executable="az", cache_store=cache).list_usage("eastus")
+
+        self.assertEqual(rows, [{"name": {"value": "standardDSv5Family"}, "currentValue": 1, "limit": 10}])
+        self.assertEqual(run.call_count, 1)
+
+    def test_disabled_cache_does_not_resolve_subscription_for_usage_key(self) -> None:
+        usage = subprocess.CompletedProcess(args=[], returncode=0, stdout="[]", stderr="")
+
+        with patch("capacitychecker.providers.subprocess.run", return_value=usage) as run:
+            AzureCliProvider(az_executable="az", cache_enabled=False).list_usage("eastus")
+
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][:3], ["az", "vm", "list-usage"])
+
+    def test_persistent_cache_hit_skips_spot_score_cli_call(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            cache = CacheStore(Path(temp_dir), now=lambda: 1000.0)
+            cache.set(
+                "spot-placement-score",
+                {
+                    "subscription": "sub-123",
+                    "regions": ["eastus"],
+                    "skus": ["standard_d2s_v5"],
+                    "availability_zones": False,
+                    "desired_count": 1,
+                },
+                {"placementScores": [{"sku": "Standard_D2s_v5", "region": "eastus", "score": "High"}]},
+                ttl_seconds=120,
+            )
+
+            account = subprocess.CompletedProcess(args=[], returncode=0, stdout="sub-123\n", stderr="")
+            with patch("capacitychecker.providers.subprocess.run", return_value=account) as run:
+                rows = AzureCliProvider(az_executable="az", cache_store=cache).list_spot_placement_scores(
+                    ["eastus"],
+                    ["Standard_D2s_v5"],
+                    [None],
+                    1,
+                )
+
+        self.assertEqual(rows, [{"sku": "Standard_D2s_v5", "region": "eastus", "score": "High"}])
+        self.assertEqual(run.call_count, 1)
+        self.assertEqual(run.call_args.args[0][:3], ["az", "account", "show"])
 
     def test_can_skip_live_sku_metadata(self) -> None:
         with patch("capacitychecker.providers.subprocess.run") as run:

@@ -21,11 +21,15 @@ def build_matrix(
         if include_spot_score
         else None
     )
+    pending_cache_notes = _consume_cache_notes(provider)
 
     for region in regions:
         usage = provider.list_usage(region)
+        usage_cache_notes = pending_cache_notes + _consume_cache_notes(provider)
+        pending_cache_notes = []
         for sku in skus:
             sku_records = provider.list_skus(region, sku)
+            cache_notes = usage_cache_notes + _consume_cache_notes(provider)
             sku_metadata_available = sku_records is not None
             sku_record = _find_sku_record(sku_records or [], sku, region)
             for zone in zones:
@@ -42,6 +46,7 @@ def build_matrix(
                         checked_at,
                         include_spot_score,
                         spot_record,
+                        cache_notes,
                     )
                 )
 
@@ -59,8 +64,9 @@ def _build_row(
     checked_at: str,
     spot_score_requested: bool,
     spot_record: dict[str, Any] | None,
+    cache_notes: list[str],
 ) -> CapacityRow:
-    notes: list[str] = []
+    notes: list[str] = list(cache_notes)
     offered = _is_offered(sku_metadata_available, sku_record, region, zone)
     restricted = _is_restricted(sku_record, region, zone) if offered else None
     quota = _quota_headroom(sku, usage)
@@ -134,6 +140,13 @@ def _find_sku_record(records: list[dict[str, Any]], sku: str, region: str) -> di
         if not locations or region.casefold() in locations:
             return record
     return None
+
+
+def _consume_cache_notes(provider: CapacityProvider) -> list[str]:
+    cache_notes = getattr(provider, "cache_notes", None)
+    if callable(cache_notes):
+        return list(cache_notes())
+    return []
 
 
 def _find_spot_record(records: list[dict[str, Any]], sku: str, region: str, zone: str | None) -> dict[str, Any] | None:

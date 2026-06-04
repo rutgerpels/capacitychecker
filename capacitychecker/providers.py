@@ -6,8 +6,13 @@ import subprocess
 from typing import Any, Protocol
 from urllib.parse import quote
 
+from .cache import CacheError, CacheStore
+
 
 RESOURCE_SKUS_API_VERSION = "2021-07-01"
+RESOURCE_SKUS_TTL_SECONDS = 3600
+USAGE_TTL_SECONDS = 300
+SPOT_PLACEMENT_TTL_SECONDS = 120
 
 
 class CapacityProvider(Protocol):
@@ -41,12 +46,17 @@ class AzureCliProvider:
         subscription: str | None = None,
         enable_live_sku_metadata: bool = True,
         az_executable: str | None = None,
+        cache_store: CacheStore | None = None,
+        cache_enabled: bool = True,
     ) -> None:
         self.subscription = subscription
         self.enable_live_sku_metadata = enable_live_sku_metadata
         self.az_executable = az_executable
+        self.cache_store = cache_store
+        self.cache_enabled = cache_enabled
         self._subscription_id: str | None = None
         self._sku_cache: dict[str, list[dict[str, Any]]] = {}
+        self._cache_notes: list[str] = []
 
     @property
     def source_name(self) -> str:
@@ -62,9 +72,11 @@ class AzureCliProvider:
         cache_key = region.casefold()
         cached_rows = self._sku_cache.get(cache_key)
         if cached_rows is not None:
+            self._cache_notes.append(f"ResourceSkus in-memory cache hit for {region}.")
             return cached_rows
 
-        subscription_id = quote(self._resolve_subscription_id(), safe="")
+        resolved_subscription_id = self._resolve_subscription_id()
+        subscription_id = quote(resolved_subscription_id, safe="")
         url = (
             f"https://management.azure.com/subscriptions/{subscription_id}"
             "/providers/Microsoft.Compute/skus"
@@ -82,7 +94,16 @@ class AzureCliProvider:
             "--output",
             "json",
         ]
-        response = self._run_json(command)
+        response = self._cached_json(
+            "resource-skus",
+            {
+                "api_version": RESOURCE_SKUS_API_VERSION,
+                "subscription": resolved_subscription_id,
+                "region": region.casefold(),
+            },
+            RESOURCE_SKUS_TTL_SECONDS,
+            command,
+        )
         if not isinstance(response, dict):
             raise ProviderError("Azure Resource SKUs API returned unexpected JSON; expected an object.")
 
@@ -103,7 +124,15 @@ class AzureCliProvider:
             "--output",
             "json",
         ]
-        response = self._run_json(command)
+        response = self._cached_json(
+            "usage",
+            {
+                "subscription": self._cache_subscription_key(),
+                "region": region.casefold(),
+            },
+            USAGE_TTL_SECONDS,
+            command,
+        )
         if not isinstance(response, list):
             raise ProviderError("Azure CLI returned unexpected JSON; expected a list.")
         return response
@@ -134,7 +163,18 @@ class AzureCliProvider:
             "json",
             "--only-show-errors",
         ]
-        response = self._run_json(command)
+        response = self._cached_json(
+            "spot-placement-score",
+            {
+                "subscription": self._cache_subscription_key(),
+                "regions": sorted(region.casefold() for region in regions),
+                "skus": sorted(sku.casefold() for sku in skus),
+                "availability_zones": availability_zones,
+                "desired_count": desired_count,
+            },
+            SPOT_PLACEMENT_TTL_SECONDS,
+            command,
+        )
         if not isinstance(response, dict):
             raise ProviderError("Azure Spot Placement Score returned unexpected JSON; expected an object.")
 
@@ -152,6 +192,16 @@ class AzureCliProvider:
         if not self._subscription_id:
             raise ProviderError("Azure CLI did not return a subscription id.")
         return self._subscription_id
+
+    def _cache_subscription_key(self) -> str:
+        if not self.cache_enabled or self.cache_store is None:
+            return self.subscription or "default"
+        return self._resolve_subscription_id()
+
+    def cache_notes(self) -> list[str]:
+        notes = self._cache_notes
+        self._cache_notes = []
+        return notes
 
     def _az_command(self) -> str:
         executable = self.az_executable or shutil.which("az")
@@ -182,6 +232,34 @@ class AzureCliProvider:
             return json.loads(stdout or "[]")
         except json.JSONDecodeError as exc:
             raise ProviderError("Azure CLI returned invalid JSON.") from exc
+
+    def _cached_json(
+        self,
+        namespace: str,
+        key_data: dict[str, Any],
+        ttl_seconds: int,
+        command: list[str],
+    ) -> Any:
+        if not self.cache_enabled or self.cache_store is None:
+            self._cache_notes.append(f"{namespace} cache bypassed.")
+            return self._run_json(command)
+
+        try:
+            cached = self.cache_store.get(namespace, key_data)
+        except CacheError as exc:
+            raise ProviderError(str(exc)) from exc
+
+        if cached is not None:
+            self._cache_notes.append(f"{namespace} cache hit; age {cached.age_seconds}s.")
+            return cached.value
+
+        self._cache_notes.append(f"{namespace} cache miss.")
+        response = self._run_json(command)
+        try:
+            self.cache_store.set(namespace, key_data, response, ttl_seconds)
+        except CacheError as exc:
+            raise ProviderError(str(exc)) from exc
+        return response
 
 def _casefold(value: Any) -> str:
     return str(value or "").casefold()

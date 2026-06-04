@@ -5,7 +5,11 @@ import json
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
+from capacitychecker.cache import CacheStore
 from capacitychecker.cli import _build_parser, main
 from capacitychecker.matrix import build_matrix
 from capacitychecker.renderers import render_csv, render_json, render_table
@@ -49,6 +53,33 @@ class CliTests(unittest.TestCase):
         self.assertFalse(opt_out_args.enable_live_sku_metadata)
         self.assertTrue(spot_args.include_spot_score)
         self.assertEqual(spot_args.spot_desired_count, 2)
+
+    def test_cache_flags_are_available(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(["check", "--sku", "Standard_D2s_v5", "--region", "eastus", "--no-cache"])
+
+        self.assertTrue(args.no_cache)
+
+    def test_cache_info_does_not_require_sku_or_region(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            cache = CacheStore(Path(temp_dir), now=lambda: 1000.0)
+            with patch("capacitychecker.cli.CacheStore", return_value=cache):
+                code, stdout, stderr = self.run_cli("check", "--cache-info")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Cache directory:", stdout)
+        self.assertIn("Entries: 0", stdout)
+
+    def test_clear_cache_does_not_require_sku_or_region(self) -> None:
+        with TemporaryDirectory() as temp_dir:
+            cache = CacheStore(Path(temp_dir), now=lambda: 1000.0)
+            cache.set("usage", {"region": "eastus"}, [], ttl_seconds=60)
+            with patch("capacitychecker.cli.CacheStore", return_value=cache):
+                code, stdout, stderr = self.run_cli("check", "--clear-cache")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Cleared 1 cache entry", stdout)
 
 class QuotaOnlyProvider:
     source_name = "quota-only-test"

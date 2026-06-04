@@ -4,6 +4,7 @@ import argparse
 import sys
 
 from . import __version__
+from .cache import CacheError, CacheStore
 from .matrix import build_matrix
 from .providers import AzureCliProvider, ProviderError
 from .renderers import render_csv, render_json, render_table, write_output
@@ -22,11 +23,20 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
+        cache_store = CacheStore()
+        if args.clear_cache:
+            removed = cache_store.clear()
+            write_output(f"Cleared {removed} cache entr{'y' if removed == 1 else 'ies'} from {cache_store.path()}.")
+            return 0
+        if args.cache_info:
+            write_output(_render_cache_info(cache_store))
+            return 0
+
         skus = _collect_values(args.sku, args.skus, "sku")
         regions = _collect_values(args.region, args.regions, "region")
         zones = _collect_zones(args.zones)
         spot_desired_count = _collect_positive_int(args.spot_desired_count, "spot-desired-count")
-        provider = _build_provider(args)
+        provider = _build_provider(args, cache_store)
         rows = build_matrix(
             provider,
             skus,
@@ -37,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         write_output(_render(args.output, rows, args.subscription))
         return 0
-    except (ProviderError, ValueError) as exc:
+    except (CacheError, ProviderError, ValueError) as exc:
         print(f"capacitychecker: error: {exc}", file=sys.stderr)
         return 1
 
@@ -55,6 +65,9 @@ def _build_parser() -> argparse.ArgumentParser:
     check.add_argument("--zones", help="Comma-separated availability zones to evaluate, such as 1,2,3.")
     check.add_argument("--subscription", help="Azure subscription id or name to pass to Azure CLI.")
     check.add_argument("--output", choices=["table", "json", "csv"], default="table", help="Output format.")
+    check.add_argument("--no-cache", action="store_true", help="Bypass persistent cache reads and writes for this run.")
+    check.add_argument("--clear-cache", action="store_true", help="Clear persistent cache entries and exit.")
+    check.add_argument("--cache-info", action="store_true", help="Show persistent cache location and entry summary, then exit.")
     check.add_argument(
         "--include-spot-score",
         action="store_true",
@@ -82,8 +95,13 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _build_provider(args: argparse.Namespace) -> AzureCliProvider:
-    return AzureCliProvider(subscription=args.subscription, enable_live_sku_metadata=args.enable_live_sku_metadata)
+def _build_provider(args: argparse.Namespace, cache_store: CacheStore) -> AzureCliProvider:
+    return AzureCliProvider(
+        subscription=args.subscription,
+        enable_live_sku_metadata=args.enable_live_sku_metadata,
+        cache_store=cache_store,
+        cache_enabled=not args.no_cache,
+    )
 
 
 def _collect_values(single_values: list[str], comma_values: str | None, name: str) -> list[str]:
@@ -111,6 +129,20 @@ def _collect_positive_int(value: int, name: str) -> int:
     if value < 1:
         raise ValueError(f"--{name} must be greater than zero.")
     return value
+
+
+def _render_cache_info(cache_store: CacheStore) -> str:
+    entries = cache_store.describe()
+    lines = [f"Cache directory: {cache_store.path()}", f"Entries: {len(entries)}"]
+    if not entries:
+        return "\n".join(lines)
+
+    lines.append("Namespace  Status   Key")
+    lines.append("---------  -------  ---")
+    for entry in entries:
+        status = "expired" if entry.expired else "fresh"
+        lines.append(f"{entry.namespace.ljust(9)}  {status.ljust(7)}  {entry.cache_key[:12]}")
+    return "\n".join(lines)
 
 
 def _render(output: str, rows: list, subscription: str | None) -> str:
