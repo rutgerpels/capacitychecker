@@ -304,6 +304,8 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 
 - **Target:** Fetch matrix for 5 SKUs × 10 regions in <10 seconds (with warm cache, <3 seconds).
 - **Acceptable:** Cache hit rate >80% in typical usage (same SKUs/regions queried repeatedly).
+- **Current benchmark:** Bounded parallel region workers reduce cold no-cache Azure CLI runtime significantly, but cold runs still exceed the <10s target because each region requires live Azure CLI/API calls. Warm-cache runs meet the <3s target.
+- **Observed 5 SKUs × 10 regions:** max-workers 1 cold no-cache: ~120s; max-workers 4 cold no-cache: ~37s; max-workers 10 cold no-cache: ~19s; max-workers 4 warm cache: ~2.4s.
 
 ---
 
@@ -320,6 +322,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 - [x] JSON output format
 - [x] CSV output format
 - [x] Authentication & permission requirements documented
+- [x] Bounded parallel region fetching
 - [ ] Unit & integration tests (baseline exists; coverage target still TBD)
 - [x] User guide and API docs baseline
 - [ ] V1 release
@@ -327,7 +330,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 ### V1.1 – Enhancements & Hardening
 - [ ] Offline mode (cached fallback if APIs fail)
 - [ ] Improved error messages and troubleshooting
-- [ ] Performance optimization (parallel API calls; persistent caching baseline is complete)
+- [x] Performance optimization baseline (bounded parallel region fetches; persistent caching baseline is complete)
 - [ ] Shell completions (bash, zsh, PowerShell)
 - [ ] Optional probe feature (allocatability test, opt-in)
 
@@ -378,10 +381,10 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 
 ## Next Steps
 
-1. **Performance:** Parallelize region fetches and benchmark 5 SKUs x 10 regions against the <10s target.
-2. **Offline fallback:** Add an explicit offline mode that can reuse stale cached entries when Azure APIs are unavailable.
-3. **Validation/UAT:** Compare Resource SKUs restrictions, quota output, and Spot Placement Score guidance against Azure portal for known constrained and healthy regions.
-4. **Release hardening:** Add CI, coverage reporting, installation guidance, and release notes for v1.0.
+1. **CI/test baseline:** Add CI and define the MVP coverage target.
+2. **Validation/UAT:** Compare Resource SKUs restrictions, quota output, and Spot Placement Score guidance against Azure portal for known constrained and healthy regions.
+3. **Release hardening:** Add packaging/install guidance and release notes for v1.0.
+4. **Offline fallback:** Add an explicit V1.1 mode that can reuse stale cached entries when Azure APIs are unavailable.
 
 ---
 

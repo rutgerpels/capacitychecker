@@ -36,6 +36,7 @@ def main(argv: list[str] | None = None) -> int:
         regions = _collect_values(args.region, args.regions, "region")
         zones = _collect_zones(args.zones)
         spot_desired_count = _collect_positive_int(args.spot_desired_count, "spot-desired-count")
+        max_workers = _collect_positive_int(args.max_workers, "max-workers")
         provider = _build_provider(args, cache_store)
         rows = build_matrix(
             provider,
@@ -44,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
             zones,
             include_spot_score=args.include_spot_score,
             spot_desired_count=spot_desired_count,
+            max_workers=max_workers,
         )
         write_output(_render(args.output, rows, args.subscription))
         return 0
@@ -65,6 +67,12 @@ def _build_parser() -> argparse.ArgumentParser:
     check.add_argument("--zones", help="Comma-separated availability zones to evaluate, such as 1,2,3.")
     check.add_argument("--subscription", help="Azure subscription id or name to pass to Azure CLI.")
     check.add_argument("--output", choices=["table", "json", "csv"], default="table", help="Output format.")
+    check.add_argument(
+        "--max-workers",
+        type=int,
+        default=4,
+        help="Maximum parallel region workers for live checks. Default: 4.",
+    )
     check.add_argument("--no-cache", action="store_true", help="Bypass persistent cache reads and writes for this run.")
     check.add_argument("--clear-cache", action="store_true", help="Clear persistent cache entries and exit.")
     check.add_argument("--cache-info", action="store_true", help="Show persistent cache location and entry summary, then exit.")

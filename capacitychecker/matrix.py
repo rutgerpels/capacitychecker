@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from .models import CapacityRow, QuotaHeadroom, utc_now_iso
 from .providers import CapacityProvider
+
+DEFAULT_MAX_WORKERS = 4
 
 
 def build_matrix(
@@ -13,43 +16,89 @@ def build_matrix(
     zones: list[str | None],
     include_spot_score: bool = False,
     spot_desired_count: int = 1,
+    max_workers: int = DEFAULT_MAX_WORKERS,
 ) -> list[CapacityRow]:
-    rows: list[CapacityRow] = []
+    if max_workers < 1:
+        raise ValueError("max_workers must be greater than zero.")
+
     checked_at = utc_now_iso()
     spot_scores = (
         provider.list_spot_placement_scores(regions, skus, zones, spot_desired_count)
         if include_spot_score
         else None
     )
-    pending_cache_notes = _consume_cache_notes(provider)
+    shared_cache_notes = _consume_cache_notes(provider)
 
-    for region in regions:
-        usage = provider.list_usage(region)
-        usage_cache_notes = pending_cache_notes + _consume_cache_notes(provider)
-        pending_cache_notes = []
-        for sku in skus:
-            sku_records = provider.list_skus(region, sku)
-            cache_notes = usage_cache_notes + _consume_cache_notes(provider)
-            sku_metadata_available = sku_records is not None
-            sku_record = _find_sku_record(sku_records or [], sku, region)
-            for zone in zones:
-                spot_record = _find_spot_record(spot_scores or [], sku, region, zone)
-                rows.append(
-                    _build_row(
-                        provider.source_name,
-                        sku,
-                        region,
-                        zone,
-                        sku_metadata_available,
-                        sku_record,
-                        usage,
-                        checked_at,
-                        include_spot_score,
-                        spot_record,
-                        cache_notes,
-                    )
+    worker_count = min(max_workers, len(regions))
+    if worker_count <= 1:
+        return [
+            row
+            for region in regions
+            for row in _build_region_rows(
+                provider,
+                skus,
+                zones,
+                region,
+                checked_at,
+                include_spot_score,
+                spot_scores,
+                shared_cache_notes,
+            )
+        ]
+
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        region_rows = executor.map(
+            lambda region: _build_region_rows(
+                provider,
+                skus,
+                zones,
+                region,
+                checked_at,
+                include_spot_score,
+                spot_scores,
+                shared_cache_notes,
+            ),
+            regions,
+        )
+
+    return [row for rows in region_rows for row in rows]
+
+
+def _build_region_rows(
+    provider: CapacityProvider,
+    skus: list[str],
+    zones: list[str | None],
+    region: str,
+    checked_at: str,
+    include_spot_score: bool,
+    spot_scores: list[dict[str, Any]] | None,
+    shared_cache_notes: list[str],
+) -> list[CapacityRow]:
+    rows: list[CapacityRow] = []
+    usage = provider.list_usage(region)
+    usage_cache_notes = shared_cache_notes + _consume_cache_notes(provider)
+    for sku in skus:
+        sku_records = provider.list_skus(region, sku)
+        cache_notes = usage_cache_notes + _consume_cache_notes(provider)
+        sku_metadata_available = sku_records is not None
+        sku_record = _find_sku_record(sku_records or [], sku, region)
+        for zone in zones:
+            spot_record = _find_spot_record(spot_scores or [], sku, region, zone)
+            rows.append(
+                _build_row(
+                    provider.source_name,
+                    sku,
+                    region,
+                    zone,
+                    sku_metadata_available,
+                    sku_record,
+                    usage,
+                    checked_at,
+                    include_spot_score,
+                    spot_record,
+                    cache_notes,
                 )
-
+            )
     return rows
 
 
