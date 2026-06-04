@@ -6,9 +6,21 @@ from .models import CapacityRow, QuotaHeadroom, utc_now_iso
 from .providers import CapacityProvider
 
 
-def build_matrix(provider: CapacityProvider, skus: list[str], regions: list[str], zones: list[str | None]) -> list[CapacityRow]:
+def build_matrix(
+    provider: CapacityProvider,
+    skus: list[str],
+    regions: list[str],
+    zones: list[str | None],
+    include_spot_score: bool = False,
+    spot_desired_count: int = 1,
+) -> list[CapacityRow]:
     rows: list[CapacityRow] = []
     checked_at = utc_now_iso()
+    spot_scores = (
+        provider.list_spot_placement_scores(regions, skus, zones, spot_desired_count)
+        if include_spot_score
+        else None
+    )
 
     for region in regions:
         usage = provider.list_usage(region)
@@ -17,7 +29,21 @@ def build_matrix(provider: CapacityProvider, skus: list[str], regions: list[str]
             sku_metadata_available = sku_records is not None
             sku_record = _find_sku_record(sku_records or [], sku, region)
             for zone in zones:
-                rows.append(_build_row(provider.source_name, sku, region, zone, sku_metadata_available, sku_record, usage, checked_at))
+                spot_record = _find_spot_record(spot_scores or [], sku, region, zone)
+                rows.append(
+                    _build_row(
+                        provider.source_name,
+                        sku,
+                        region,
+                        zone,
+                        sku_metadata_available,
+                        sku_record,
+                        usage,
+                        checked_at,
+                        include_spot_score,
+                        spot_record,
+                    )
+                )
 
     return rows
 
@@ -31,11 +57,25 @@ def _build_row(
     sku_record: dict[str, Any] | None,
     usage: list[dict[str, Any]],
     checked_at: str,
+    spot_score_requested: bool,
+    spot_record: dict[str, Any] | None,
 ) -> CapacityRow:
     notes: list[str] = []
     offered = _is_offered(sku_metadata_available, sku_record, region, zone)
     restricted = _is_restricted(sku_record, region, zone) if offered else None
     quota = _quota_headroom(sku, usage)
+    spot_score = _spot_score_value(spot_record)
+    spot_guidance = _spot_guidance(spot_score)
+    spot_quota_available = _spot_quota_available(spot_record)
+    sources = [source_name, "ResourceSkus" if sku_metadata_available else "Usage/Quota only", "Usage/Quota"]
+
+    if spot_record is not None:
+        sources.append("SpotPlacementScore")
+        notes.append(
+            "Spot Placement Score is Microsoft guidance for Spot placement likelihood, not a guarantee of full or partial fulfillment."
+        )
+    elif spot_score_requested:
+        notes.append("Spot Placement Score was requested but Azure returned no matching score for this row.")
 
     if offered is None:
         if quota and quota.value is not None and quota.value <= 0:
@@ -45,7 +85,7 @@ def _build_row(
         else:
             allocatable = "unknown"
             confidence = "low"
-            notes.append("Live SKU metadata is unavailable in MVP live mode; use fixture data or opt in to live SKU metadata for offered/restricted signals.")
+            notes.append("Live SKU metadata is unavailable; enable live SKU metadata for offered/restricted signals.")
     elif not offered:
         allocatable = "no"
         confidence = "high"
@@ -72,11 +112,14 @@ def _build_row(
         zone=zone,
         offered=offered,
         capacity_restricted=restricted,
-        spot_pressure="unknown",
+        spot_pressure=spot_guidance,
         quota_headroom=quota,
         allocatable=allocatable,
         confidence=confidence,
-        sources=[source_name, "ResourceSkus" if sku_metadata_available else "Usage/Quota only", "Usage/Quota"],
+        spot_placement_score=spot_score,
+        spot_placement_guidance=spot_guidance,
+        spot_quota_available=spot_quota_available,
+        sources=sources,
         freshness_seconds=0,
         checked_at=checked_at,
         notes=notes,
@@ -89,6 +132,18 @@ def _find_sku_record(records: list[dict[str, Any]], sku: str, region: str) -> di
             continue
         locations = [str(location).casefold() for location in record.get("locations", [])]
         if not locations or region.casefold() in locations:
+            return record
+    return None
+
+
+def _find_spot_record(records: list[dict[str, Any]], sku: str, region: str, zone: str | None) -> dict[str, Any] | None:
+    for record in records:
+        if _casefold(record.get("sku")) != sku.casefold():
+            continue
+        if _casefold(record.get("region")) != region.casefold():
+            continue
+        record_zone = record.get("availabilityZone")
+        if zone is None or str(record_zone or "") == zone:
             return record
     return None
 
@@ -185,6 +240,38 @@ def _parse_int(value: Any) -> int | None:
         except ValueError:
             return None
     return None
+
+
+def _spot_score_value(record: dict[str, Any] | None) -> str | None:
+    if record is None:
+        return None
+    score = record.get("score")
+    if score is None:
+        return None
+    return str(score)
+
+
+def _spot_guidance(score: str | None) -> str:
+    if not score:
+        return "unknown"
+
+    normalized = score.casefold()
+    if normalized in {"high", "medium", "low"}:
+        return normalized
+    if "notavailable" in normalized or "not_available" in normalized:
+        return "unavailable"
+    return "unknown"
+
+
+def _spot_quota_available(record: dict[str, Any] | None) -> bool | None:
+    if record is None:
+        return None
+    value = record.get("isQuotaAvailable")
+    return value if isinstance(value, bool) else None
+
+
+def _casefold(value: Any) -> str:
+    return str(value or "").casefold()
 
 
 def _sku_family_hint(sku: str) -> str:

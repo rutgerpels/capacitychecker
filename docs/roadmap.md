@@ -16,10 +16,10 @@ The Azure Multi-Region Capacity Checker is a CLI-first tool designed to transfor
 
 - **Repo:** `capacitychecker_v2` (fresh start)
 - **Team:** Azure Capacity / Field Engineering alignment
-- **Inputs:** CLI accepts one or more SKUs, one or more regions, optional zones, optional subscription, and fixture files for deterministic runs.
+- **Inputs:** CLI accepts one or more SKUs, one or more regions, optional zones, and optional subscription.
 - **Outputs:** Console table, JSON, and CSV are implemented.
 - **Live Azure data:** Default live mode queries quota/headroom with `az vm list-usage` and offered/restricted metadata through the Azure Resource SKUs ARM endpoint via `az rest`.
-- **Maturity:** MVP/pre-alpha. Core CLI works against live Azure and fixtures; caching, Spot pressure, CI/CD, and broader UAT remain open.
+- **Maturity:** MVP/pre-alpha. Core CLI works against live Azure; caching, CI/CD, and broader UAT remain open.
 
 ---
 
@@ -49,10 +49,10 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
    - Whether the region/zone is under capacity pressure for this SKU.  
    - Source: Azure `ResourceSkus` API `restrictions` field.
 
-3. **Spot Pressure** (signal):  
-   - Derived from Spot signals where available, such as pricing signals or other documented indicators.  
-   - Source: To be validated during the Azure signal spike.  
-   - Interpretation: Higher pressure → general scarcity signal (not definitive but indicative).
+3. **Spot Placement Guidance** (optional signal):
+   - Microsoft Spot Placement Score guidance for Spot VM placement likelihood when `--include-spot-score` is used.
+   - Source: Azure Compute Recommender Spot Placement Score (`az compute-recommender spot-placement-score`).
+   - Interpretation: Higher score means more favorable Spot placement guidance for the requested size/count/region/zone. It is not a guarantee that the Spot request will be fully or partially fulfilled, and it is not a post-placement eviction-risk guarantee.
 
 4. **Quota Headroom** (integer):  
    - Remaining quota for this SKU in this region on the target subscription.  
@@ -68,7 +68,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 6. **Freshness & Source** (metadata):  
    - When was this data refreshed?  
    - Which API(s) sourced the signal?  
-   - Example: `ResourceSkus (cached 5min ago)`, `QuotaAPI (2min ago)`, `SpotPressure (unknown source pending validation)`.
+   - Example: `ResourceSkus (cached 5min ago)`, `QuotaAPI (2min ago)`, `SpotPlacementScore (current run)`.
 
 ### Output Formats
 
@@ -116,7 +116,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
    - **Tasks:**
      - [x] Document Azure ResourceSkus API schema and filtering options.
      - [x] Document Azure quota/headroom lookup behavior for the current Azure CLI-backed MVP.
-     - Identify Spot signal source (pricing API, documented telemetry, or leave as unknown if no trustworthy source exists).
+     - [x] Identify Spot signal source: Microsoft Spot Placement Score for optional Spot placement guidance.
      - [x] Document post-V1 probe strategy without implementing it in the v1 critical path.
      - Decide on SDK choice (Azure SDK for Python/Go/Node, or raw REST calls).
      - [x] Design schema for canonical matrix internal representation.
@@ -128,7 +128,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
      - [x] Implement SKU and region input parsing/normalization.
      - [x] Implement ResourceSkus API queries through `az rest` with per-run in-memory caching.
      - [x] Implement quota/headroom queries through `az vm list-usage`.
-     - Implement Spot signal fetch (or mock if API unavailable).
+     - [x] Implement optional Spot Placement Score fetch.
      - [x] Model allocatability as a metadata-derived status with confidence.
      - [x] Build in-memory matrix representation and enrichment.
      - [x] Add basic error handling and user feedback.
@@ -168,7 +168,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
    - **Goal:** Ensure accuracy, performance, and user experience.
    - **Tasks:**
      - Unit tests for matrix schema, data transformation, and output formatting.
-     - Integration tests with mock Azure APIs (or sandbox tenant if available).
+     - Integration tests with recorded Azure responses or a sandbox tenant if available.
      - End-to-end tests (CLI invocation, data fetch, output validation).
      - Performance tests (time to fetch N regions × M SKUs, cache hit rates).
      - User acceptance testing with 2–3 field engineers.
@@ -314,7 +314,7 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 - [x] CLI with SKU/region input parsing
 - [x] ResourceSkus API integration with per-run in-memory caching
 - [x] Quota/headroom integration using Azure CLI
-- [ ] Spot signal integration (or mock)
+- [x] Spot Placement Score integration for optional Spot placement guidance
 - [x] Matrix schema and internal representation
 - [x] Console table output
 - [x] JSON output format
@@ -378,11 +378,10 @@ Per **SKU × Region (× Zone)**, the matrix surfaces:
 
 ## Next Steps
 
-1. **Spot signal decision:** Confirm whether V1 should keep Spot as `unknown`, use a pricing-derived heuristic, or defer the column.
-2. **Persistent caching:** Add cache storage/TTL so repeated region/SKU checks are faster and can support offline fallback.
-3. **Performance:** Parallelize region fetches and benchmark 5 SKUs x 10 regions against the <10s target.
-4. **Validation/UAT:** Compare Resource SKUs restrictions and quota output against Azure portal for known constrained and healthy regions.
-5. **Release hardening:** Add CI, coverage reporting, installation guidance, and release notes for internal v1.0.
+1. **Persistent caching:** Add cache storage/TTL so repeated region/SKU checks are faster and can support offline fallback.
+2. **Performance:** Parallelize region fetches and benchmark 5 SKUs x 10 regions against the <10s target.
+3. **Validation/UAT:** Compare Resource SKUs restrictions, quota output, and Spot Placement Score guidance against Azure portal for known constrained and healthy regions.
+4. **Release hardening:** Add CI, coverage reporting, installation guidance, and release notes for internal v1.0.
 
 ---
 

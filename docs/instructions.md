@@ -92,9 +92,9 @@ python -m capacitychecker check --skus Standard_D2s_v5,Standard_E4s_v5 --regions
 # With zones (if region is zoned)
 python -m capacitychecker check --skus Standard_D2s_v5 --regions eastus --zones 1,2,3
 
-# Fixture-backed demo/test mode, with no Azure login required
-python -m capacitychecker check --skus Standard_D2s_v5,Standard_E4s_v5 --regions eastus,swedencentral \
-  --mock-skus-file tests\fixtures\skus.json --mock-usage-file tests\fixtures\usage.json
+# Include Microsoft Spot Placement Score guidance for Spot VM placement likelihood
+python -m capacitychecker check --sku Standard_D2s_v5 --region eastus --include-spot-score --spot-desired-count 1
+
 ```
 
 ### Live Azure Mode
@@ -105,7 +105,19 @@ By default, live mode uses Azure CLI for both quota/headroom and Resource SKUs m
 python -m capacitychecker check --sku Standard_D2s_v5 --region eastus
 ```
 
-Use `--skip-live-sku-metadata` for quota-only checks, or fixture mode when you need deterministic offered/restricted behavior for demos or tests.
+Use `--skip-live-sku-metadata` for quota-only checks.
+
+### Spot Placement Score
+
+Use `--include-spot-score` when you want Microsoft Spot Placement Score guidance for Spot VM placement likelihood:
+
+```bash
+python -m capacitychecker check --sku Standard_D2s_v5 --region eastus --include-spot-score --spot-desired-count 1
+```
+
+Spot Placement Score is separate from regular VM allocatability. Regular VM allocatability uses offered/restricted metadata and subscription quota. Spot Placement Score answers a narrower question: given the requested Spot VM size, count, region, and optional zone scope, how favorable is the current Spot placement guidance?
+
+Important caveat: Spot Placement Score is a Microsoft recommendation based on current data points like Spot VM availability. A high score does not guarantee that a Spot request will be fully or partially fulfilled, and it is not an eviction-risk guarantee after the VM is running.
 
 ### Example Scenarios
 
@@ -168,7 +180,7 @@ Standard_E4s_v5      swedencentral   Yes      Yes         High           5 vCPU 
 | **Region** | Azure region identifier | e.g., `eastus`, `swedencentral` |
 | **Offered** | Is this SKU available in the region at all? | Yes / No |
 | **Restricted** | Does Azure metadata report a capacity restriction for this SKU/region/zone? | Yes / No / Unknown |
-| **Spot Pressure** | Derived capacity pressure indicator from trustworthy Spot-related signals, once validated | Low / Medium / High / Unknown |
+| **Spot Pressure** | Spot Placement Score guidance when `--include-spot-score` is used; otherwise unknown | High / Medium / Low / Unavailable / Unknown |
 | **Quota Headroom** | Available quota for this SKU in your subscription in this region | e.g., `50 vCPU` or `Unlimited` |
 | **Allocatable** | Metadata-derived recommendation confidence, not a live deployment guarantee in V1 | Likely Yes / Likely No / No / Unknown |
 | **Confidence** | How confident is this signal? | High / Medium / Low |
