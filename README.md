@@ -12,4 +12,9 @@ python -m capacitychecker check --sku Standard_D2s_v5 --region eastus --include-
 python -m capacitychecker check --cache-info
 ```
 
-See `docs\instructions.md` for end-user guidance and `docs\roadmap.md` for the implementation roadmap.
+See:
+
+- `docs\instructions.md` for end-user guidance.
+- `docs\validation.md` for live Azure validation steps.
+- `docs\release.md` for the v1 release checklist.
+- `docs\roadmap.md` for the implementation roadmap.
